@@ -35,12 +35,17 @@ MIN_FACE_SIZE         = 30       # px in scaled frame — ignore distant noise
 
 # ── TFT Display Settings ─────────────────────────────────────────────────────
 TFT_ENABLED          = True       # Enable TFT display output
-TFT_BACKEND          = "auto"     # "auto" | "framebuffer" (/dev/fb1) | "window" (desktop preview)
+TFT_BACKEND          = "auto"     # "auto" | "arduino" | "framebuffer" (/dev/fb1) | "window" (desktop preview)
 TFT_WIDTH            = 320        # TFT screen width in pixels
 TFT_HEIGHT           = 240        # TFT screen height in pixels
 TFT_FB_DEVICE        = "/dev/fb1" # Framebuffer device (Waveshare/Adafruit PiTFT)
 TFT_FEEDBACK_HOLD    = 3.5        # Seconds to hold Checkmark / Red X on screen
 TFT_ROTATION         = 0          # Screen rotation: 0, 90, 180, 270 degrees
+
+# ── Arduino Uno Shield TFT Serial Settings ──────────────────────────────────
+ARDUINO_TFT_ENABLED  = True       # Auto-detect and send commands to Arduino Uno TFT Shield
+ARDUINO_TFT_PORT     = "auto"     # "auto" (scans /dev/ttyACM* and /dev/ttyUSB*) or explicit e.g. "/dev/ttyACM0"
+ARDUINO_TFT_BAUD     = 115200     # Serial baud rate
 
 # ── Attendance Logic ─────────────────────────────────────────────────────────
 COOLDOWN_SECONDS      = 30       # prevent duplicate entries within N seconds

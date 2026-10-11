@@ -74,6 +74,7 @@ class TFTDisplay:
         self._fb_file      = None
         self._is_fb        = False
         self._cv2_preview  = False
+        self._arduino_ser  = None
 
         # Preload fonts
         self.font_title    = _load_font(max(14, int(self.height * 0.075)), bold=True)
@@ -83,11 +84,53 @@ class TFTDisplay:
         self.font_tiny     = _load_font(max(9,  int(self.height * 0.045)), bold=False)
 
         self._init_backend()
+        self._init_arduino()
 
         # Initial screen
         self.show_idle()
 
     # ── Backend Initialization ───────────────────────────────────────────────
+
+    def _init_arduino(self):
+        """Connect to Arduino Uno TFT Shield over USB serial if available."""
+        if not getattr(config, "ARDUINO_TFT_ENABLED", True):
+            return
+
+        port = getattr(config, "ARDUINO_TFT_PORT", "auto")
+        baud = getattr(config, "ARDUINO_TFT_BAUD", 115200)
+
+        candidates = []
+        if port != "auto":
+            candidates.append(port)
+        else:
+            # Common Linux/Pi Arduino device paths
+            import glob
+            candidates.extend(sorted(glob.glob("/dev/ttyACM*")))
+            candidates.extend(sorted(glob.glob("/dev/ttyUSB*")))
+            # macOS testing paths
+            candidates.extend(sorted(glob.glob("/dev/cu.usbmodem*")))
+            candidates.extend(sorted(glob.glob("/dev/cu.usbserial*")))
+
+        for p in candidates:
+            try:
+                import serial
+                ser = serial.Serial(p, baud, timeout=1)
+                time.sleep(1.8) # Allow Arduino bootloader auto-reset to settle
+                self._arduino_ser = ser
+                log.info("TFT Display: Connected to Arduino Uno TFT Shield on %s @ %d baud", p, baud)
+                break
+            except Exception as e:
+                log.debug("Could not connect to serial port %s: %s", p, e)
+
+    def _send_arduino(self, command: str):
+        """Send command string to Arduino Uno TFT Shield."""
+        if self._arduino_ser:
+            try:
+                line = (command.strip() + "\n").encode("utf-8")
+                self._arduino_ser.write(line)
+                self._arduino_ser.flush()
+            except Exception as e:
+                log.warning("Error writing to Arduino TFT Serial: %s", e)
 
     def _init_backend(self):
         """Detect and initialize the display output target."""
@@ -125,6 +168,7 @@ class TFTDisplay:
             self._current_mode = "idle"
             img = self._render_idle()
             self._output(img)
+            self._send_arduino(f"IDLE:{self._total_count}")
 
     def show_success(self, name: str, student_id: str, time_str: str = None):
         """
@@ -137,6 +181,7 @@ class TFTDisplay:
             t_str = time_str or datetime.now().strftime("%H:%M:%S")
             img = self._render_success(name, student_id, t_str)
             self._output(img)
+            self._send_arduino(f"OK:{name}:{student_id}")
             log.info("TFT: Displaying [GREEN CHECKMARK] for %s (%s)", name, student_id)
             self._schedule_revert()
 
@@ -151,6 +196,7 @@ class TFTDisplay:
             t_str = time_str or datetime.now().strftime("%H:%M:%S")
             img = self._render_unknown(t_str)
             self._output(img)
+            self._send_arduino("UNKNOWN")
             log.info("TFT: Displaying [RED X MARK] - Unrecognized person")
             self._schedule_revert()
 
@@ -164,6 +210,11 @@ class TFTDisplay:
         """Clean up display buffers."""
         self._running = False
         self._cancel_timer()
+        if self._arduino_ser:
+            try:
+                self._arduino_ser.close()
+            except Exception:
+                pass
         if self._fb_file:
             try:
                 self._fb_file.close()
