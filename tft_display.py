@@ -21,6 +21,7 @@ import time
 import math
 import logging
 import threading
+import platform
 from datetime import datetime
 from pathlib import Path
 
@@ -136,11 +137,19 @@ class TFTDisplay:
         """Detect and initialize the display output target."""
         fb_path = config.TFT_FB_DEVICE
 
+        # Check if a graphical window environment (X11 / Wayland) is actually available
+        has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+        if platform.system() == "Darwin":
+            has_display = True
+
         if self.backend == "auto":
             if os.path.exists(fb_path):
                 self._backend_type = "framebuffer"
-            else:
+            elif has_display:
                 self._backend_type = "window"
+            else:
+                # Running headless (SSH / Robot without HDMI monitor)
+                self._backend_type = "headless"
         else:
             self._backend_type = self.backend
 
@@ -151,12 +160,19 @@ class TFTDisplay:
                 log.info("TFT Display connected to Framebuffer: %s (%dx%d)",
                          fb_path, self.width, self.height)
             except Exception as e:
-                log.warning("Could not open %s (%s). Falling back to window preview.", fb_path, e)
-                self._backend_type = "window"
+                log.warning("Could not open %s (%s). Falling back to headless mode.", fb_path, e)
+                self._backend_type = "headless"
 
         if self._backend_type == "window":
-            log.info("TFT Display using Window preview mode (%dx%d)", self.width, self.height)
-            self._cv2_preview = True
+            if has_display:
+                log.info("TFT Display using Window preview mode (%dx%d)", self.width, self.height)
+                self._cv2_preview = True
+            else:
+                log.info("TFT Display: No graphical display detected. Running in headless mode.")
+                self._backend_type = "headless"
+
+        if self._backend_type == "headless":
+            log.info("TFT Display: Hardware headless mode active (Arduino / Serial visual feedback).")
 
     # ── Public API ────────────────────────────────────────────────────────────
 
