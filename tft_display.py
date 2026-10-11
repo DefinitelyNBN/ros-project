@@ -116,7 +116,12 @@ class TFTDisplay:
             try:
                 import serial
                 ser = serial.Serial(p, baud, timeout=1)
-                time.sleep(1.8) # Allow Arduino bootloader auto-reset to settle
+                ser.dtr = False
+                ser.rts = False
+                time.sleep(2.0) # Allow Arduino bootloader auto-reset to settle
+                # Drain initial buffer
+                if ser.in_waiting:
+                    ser.read(ser.in_waiting)
                 self._arduino_ser = ser
                 log.info("TFT Display: Connected to Arduino Uno TFT Shield on %s @ %d baud", p, baud)
                 break
@@ -130,6 +135,7 @@ class TFTDisplay:
                 line = (command.strip() + "\n").encode("utf-8")
                 self._arduino_ser.write(line)
                 self._arduino_ser.flush()
+                log.debug("Sent to Arduino: %s", command.strip())
             except Exception as e:
                 log.warning("Error writing to Arduino TFT Serial: %s", e)
 
