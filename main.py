@@ -90,6 +90,13 @@ class RobotNavigationFSM:
         self._pub_total_count  = None
         self._pub_unknown      = None
 
+        self._motor_driver     = None
+        try:
+            from motor_controller import MotorDriver
+            self._motor_driver = MotorDriver()
+        except Exception as e:
+            log.debug("Motor driver init: %s", e)
+
         if self.enabled:
             self._init_ros2()
             self._timer_thread = threading.Thread(target=self._control_loop, daemon=True, name="NavFSM")
@@ -176,6 +183,8 @@ class RobotNavigationFSM:
             pass
 
     def _publish_search_spin(self):
+        if self._motor_driver:
+            self._motor_driver.spin_search(speed=0.35)
         if self._cmd_vel_pub:
             try:
                 from geometry_msgs.msg import Twist
@@ -186,6 +195,8 @@ class RobotNavigationFSM:
                 pass
 
     def _publish_stop(self):
+        if self._motor_driver:
+            self._motor_driver.stop()
         if self._cmd_vel_pub:
             try:
                 from geometry_msgs.msg import Twist
@@ -220,6 +231,8 @@ class RobotNavigationFSM:
     def stop(self):
         self._running = False
         self._publish_stop()
+        if self._motor_driver:
+            self._motor_driver.cleanup()
         if self._ros2_node:
             try:
                 self._ros2_node.destroy_node()
