@@ -72,8 +72,9 @@ void setup() {
   while (!Serial) { ; } // wait for serial port to connect
 
   uint16_t ID = tft.readID();
-  if (ID == 0xD3D3 || ID == 0xD3 || ID == 0x0) {
-    ID = 0x9341; // Standard ILI9341 fallback ID for generic clones
+  // Register dump showed reg(0x00D3) = 00 00 91 41 -> ILI9341 with bit 9 low
+  if (ID == 0x9141 || ID == 0xD3D3 || ID == 0xD3 || ID == 0x0 || ID == 0xFFFF) {
+    ID = 0x9341;
   }
   tft.begin(ID);
 
