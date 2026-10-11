@@ -34,15 +34,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [BTS7960] %(message)
 log = logging.getLogger("bts7960")
 
 # ── GPIO Pin Mapping for Two BTS7960 Drivers ──────────────────────────────────
+# Option 2 (Recommended): R_EN and L_EN tied to 5V (VCC) directly on driver board.
+# Only 2 PWM signals needed per motor from the Pi!
+
 # Left Motor BTS7960:
 PIN_LEFT_RPWM = 12  # Physical Pin 32 (PWM)
 PIN_LEFT_LPWM = 13  # Physical Pin 33 (PWM)
-PIN_LEFT_EN   = 5   # Physical Pin 29 (Enable - optional, can be tied to 5V)
+PIN_LEFT_EN   = None # Tied to 5V on board
 
 # Right Motor BTS7960:
 PIN_RIGHT_RPWM = 18 # Physical Pin 12 (PWM)
 PIN_RIGHT_LPWM = 19 # Physical Pin 35 (PWM)
-PIN_RIGHT_EN   = 6  # Physical Pin 31 (Enable - optional, can be tied to 5V)
+PIN_RIGHT_EN   = None # Tied to 5V on board
 
 try:
     import RPi.GPIO as GPIO
