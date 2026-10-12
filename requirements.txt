@@ -7,3 +7,4 @@ pandas==2.0.3
 dlib==19.24.2
 imutils==0.5.4
 pyserial==3.5
+flask
