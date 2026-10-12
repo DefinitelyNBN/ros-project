@@ -162,10 +162,15 @@ class MotorDriver:
 
     def cleanup(self):
         self.stop()
-        self.left_motor.cleanup()
-        self.right_motor.cleanup()
+        try:
+            self.left_motor.cleanup()
+            self.right_motor.cleanup()
+        except Exception:
+            pass
         if GPIO_AVAILABLE:
             try:
+                # Small pause to allow lgpio thread to finish pending cycles
+                time.sleep(0.05)
                 GPIO.cleanup()
             except Exception:
                 pass
