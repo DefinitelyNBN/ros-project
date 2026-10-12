@@ -27,7 +27,7 @@ USE_MJPG            = True       # Hardware MJPG decoding (prevents USB bandwidt
 
 # ── Raspberry Pi 4B Optimization Tuning ─────────────────────────────────────
 PROCESS_SCALE         = 0.33     # Scale factor for detection (0.33x = 213x160; 5x faster on Pi 4B)
-PROCESS_EVERY_N       = 3        # Process face recognition every N frames (prevents CPU thermal throttling)
+PROCESS_EVERY_N       = 1        # Process face recognition every N frames (1 = every frame, fastest for moving robot)
 UPSAMPLE_TIMES        = 0        # 0 = fastest (recommended on Pi 4B); 1 = detect smaller faces (slower)
 DETECTION_MODEL       = "hog"    # "hog" is CPU-optimized for ARM Cortex-A72; never use "cnn" on Pi CPU
 RECOGNITION_TOLERANCE = 0.50     # lower = stricter (0.45–0.52 recommended)
@@ -49,7 +49,7 @@ ARDUINO_TFT_BAUD     = 115200     # Serial baud rate
 
 # ── Attendance Logic ─────────────────────────────────────────────────────────
 COOLDOWN_SECONDS      = 30       # prevent duplicate entries within N seconds
-CONFIRMED_FRAMES      = 3        # 3 consecutive confirmations (responsive on moving robot)
+CONFIRMED_FRAMES      = 2        # 2 consecutive confirmations (faster lock-on for moving robot)
 ATTENDANCE_SHEET_NAME = "Attendance"
 
 # ── UI Theme ─────────────────────────────────────────────────────────────────
