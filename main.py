@@ -43,6 +43,7 @@ from encoder import encode_faces
 from attendance import AttendanceManager
 from recognition_engine import RecognitionEngine
 from tft_display import TFTDisplay
+from audio_announcer import AudioAnnouncer
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 Path(config.LOGS_DIR).mkdir(parents=True, exist_ok=True)
@@ -439,6 +440,10 @@ class AttendanceApp(Tk):
         # ── Core Services ──
         self.att_mgr = AttendanceManager()
 
+        # Audio Announcer (USB speaker)
+        self.audio = AudioAnnouncer(enabled=True)
+        self.audio.announce_startup()
+
         # TFT Display Controller
         self.tft = None
         if tft_enabled and config.TFT_ENABLED:
@@ -665,20 +670,24 @@ class AttendanceApp(Tk):
 
     def _on_face_detected(self, name: str, sid: str, frame: np.ndarray, boxes):
         """Triggered when student is verified in database."""
-        # 1. Update TFT with Green Checkmark
+        # 1. Audio announcement
+        self.audio.announce_recognised(name)
+
+        # 2. Update TFT with Green Checkmark
         if self.tft:
             self.tft.show_success(name, sid)
 
-        # 2. Trigger Navigation FSM to halt robot
+        # 3. Trigger Navigation FSM to halt robot
         self.nav_fsm.lock_target(name, sid, self.att_mgr.get_count())
 
-        # 3. GUI feedback
+        # 4. GUI feedback
         self.after(0, lambda: self._show_notification(name, sid))
         self.after(0, self._refresh_table)
         self._log(f"✅ Marked: {name} (ID: {sid})")
 
     def _on_unknown_detected(self, frame: np.ndarray, boxes):
         """Triggered when an unregistered face is observed."""
+        self.audio.announce_unknown()
         if self.tft:
             self.tft.show_unknown()
         self.nav_fsm.broadcast_unknown()
@@ -806,6 +815,8 @@ class AttendanceApp(Tk):
         if messagebox.askyesno("Quit", "Stop attendance session and exit?"):
             self.engine.stop()
             self.nav_fsm.stop()
+            self.audio.announce_shutdown()
+            self.audio.shutdown()
             if self.tft:
                 self.tft.close()
             final_p = self.att_mgr.export_excel()

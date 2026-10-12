@@ -23,6 +23,7 @@ from encoder import encode_faces
 from attendance import AttendanceManager
 from recognition_engine import RecognitionEngine
 from tft_display import TFTDisplay
+from audio_announcer import AudioAnnouncer
 
 Path(config.LOGS_DIR).mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -61,6 +62,10 @@ def main():
 
     att = AttendanceManager()
 
+    # Initialize audio announcer (USB speaker)
+    audio = AudioAnnouncer(enabled=True)
+    audio.announce_startup()
+
     # Initialize TFT display feedback
     tft = None
     if config.TFT_ENABLED and not args.no_tft:
@@ -72,11 +77,13 @@ def main():
 
     def on_face_detected(name, sid, frame, boxes):
         log.info("✅ MARKED: %s (ID: %s)", name, sid)
+        audio.announce_recognised(name)
         if tft:
             tft.show_success(name, sid)
 
     def on_unknown_detected(frame, boxes):
         log.warning("❌ UNKNOWN PERSON DETECTED — Not in database!")
+        audio.announce_unknown()
         if tft:
             tft.show_unknown()
 
@@ -97,6 +104,8 @@ def main():
     def _shutdown(sig, frame):
         log.info("Shutting down…")
         engine.stop()
+        audio.announce_shutdown()
+        audio.shutdown()
         if tft:
             tft.close()
         path = att.export_excel()
