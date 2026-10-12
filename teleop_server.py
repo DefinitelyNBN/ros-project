@@ -1,7 +1,6 @@
 """
 =============================================================================
- ROS Attendance Bot — Mobile Web Teleoperation Server
- Serves a touch-friendly joystick UI to any phone on the same WiFi network.
+ ROS Attendance Bot — Mobile Web Teleoperation Server  (v2 — Polished)
 =============================================================================
  Usage (on the Pi):
      python3 teleop_server.py
@@ -22,6 +21,8 @@ import argparse
 import logging
 import threading
 import time
+import socket
+
 from flask import Flask, request, jsonify, render_template_string
 
 try:
@@ -29,411 +30,378 @@ try:
     MOTORS_AVAILABLE = True
 except Exception as e:
     MOTORS_AVAILABLE = False
-    print(f"[WARNING] MotorDriver not available: {e} — running in simulation mode")
+    print(f"[WARNING] MotorDriver not available: {e} — simulation mode")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [TELEOP-WEB] %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [TELEOP] %(message)s")
 log = logging.getLogger("teleop_server")
 
-app = Flask(__name__)
+app        = Flask(__name__)
+driver     = None
+base_speed = 0.40
 
-# ── Global state ──────────────────────────────────────────────────────────────
-driver       = None
-current_cmd  = {"left": 0.0, "right": 0.0, "state": "IDLE"}
-base_speed   = 0.40          # default speed, overridable via args
-WATCHDOG_SEC = 0.5           # stop motors if no command in this many seconds
+# Shared state
+current_cmd  = {"left": 0.0, "right": 0.0, "state": "stop"}
 _last_cmd_ts = time.time()
+WATCHDOG_SEC = 0.6   # stop if no heartbeat for this long
 
-# ── Watchdog: stop motors if phone disconnects ────────────────────────────────
+
 def _watchdog():
-    global _last_cmd_ts
     while True:
         time.sleep(0.1)
         if time.time() - _last_cmd_ts > WATCHDOG_SEC:
-            if driver and current_cmd["state"] != "IDLE":
+            if driver and current_cmd["state"] != "stop":
                 driver.stop()
-                current_cmd.update({"left": 0.0, "right": 0.0, "state": "IDLE"})
+                current_cmd.update({"left": 0.0, "right": 0.0, "state": "stop"})
 
-# ── HTML Template (served to the phone) ───────────────────────────────────────
-HTML = r"""
-<!DOCTYPE html>
+
+# ── HTML (inlined, served to phone) ──────────────────────────────────────────
+HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>🤖 Robot Teleop</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Robot Teleop</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#070B10;
+  --surface:#0E1420;
+  --card:#131928;
+  --border:#1E2D45;
+  --accent:#3B82F6;
+  --accent-glow:rgba(59,130,246,0.35);
+  --green:#22C55E;
+  --green-glow:rgba(34,197,94,0.3);
+  --red:#EF4444;
+  --red-glow:rgba(239,68,68,0.35);
+  --yellow:#F59E0B;
+  --text:#F1F5F9;
+  --muted:#64748B;
+  --btn-size:clamp(72px,18vw,96px);
+  --gap:clamp(8px,2vw,14px);
+}
+html,body{
+  height:100%;width:100%;
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;
+  overflow:hidden;
+  touch-action:none;
+  -webkit-user-select:none;user-select:none;
+}
+body{display:flex;flex-direction:column;align-items:center;height:100dvh}
 
-  :root {
-    --bg:        #0D1117;
-    --card:      #161B22;
-    --border:    #30363D;
-    --accent:    #58A6FF;
-    --green:     #3FB950;
-    --red:       #F78166;
-    --yellow:    #E3B341;
-    --text:      #E6EDF3;
-    --muted:     #8B949E;
-  }
+/* ── Topbar ── */
+.topbar{
+  width:100%;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 20px 12px;
+  background:linear-gradient(180deg,#0D1628 0%,transparent 100%);
+}
+.topbar-title{font-size:.9rem;font-weight:700;letter-spacing:.08em;color:var(--text);display:flex;align-items:center;gap:8px}
+.topbar-title svg{width:20px;height:20px;fill:var(--accent)}
+.conn-pill{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--border);
+  font-size:.7rem;font-weight:600;letter-spacing:.05em;color:var(--muted);
+  transition:all .3s;
+}
+.conn-pill.connected{color:var(--green);border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.08)}
+.conn-pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
 
-  html, body {
-    height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    touch-action: none;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+/* ── State banner ── */
+.state-banner{
+  font-size:.7rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);margin-top:2px;transition:color .15s;
+}
 
-  /* ── Header ── */
-  header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 20px;
-    background: var(--card);
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-  header h1 { font-size: 1rem; font-weight: 700; letter-spacing: 0.02em; }
-  #status-dot {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 8px var(--green);
-    transition: background 0.3s;
-  }
-  #status-dot.idle    { background: var(--muted); box-shadow: none; }
-  #status-dot.moving  { background: var(--green); box-shadow: 0 0 8px var(--green); }
-  #status-dot.stopped { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+/* ── Speed control ── */
+.speed-wrap{
+  width:88%;max-width:380px;margin-top:10px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:10px 18px;
+  display:flex;align-items:center;gap:12px;
+}
+.speed-icon{font-size:.85rem;color:var(--muted)}
+input[type=range]{
+  flex:1;-webkit-appearance:none;appearance:none;
+  height:4px;border-radius:2px;outline:none;
+  background:linear-gradient(90deg,var(--accent) var(--pct,40%),var(--border) var(--pct,40%));
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:20px;height:20px;border-radius:50%;
+  background:var(--accent);cursor:pointer;
+  box-shadow:0 0 10px var(--accent-glow);
+  transition:transform .1s;
+}
+input[type=range]:active::-webkit-slider-thumb{transform:scale(1.25)}
+.speed-val{font-size:.85rem;font-weight:800;color:var(--accent);min-width:36px;text-align:right}
 
-  /* ── State badge ── */
-  #state-label {
-    font-size: 0.75rem;
-    color: var(--muted);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
+/* ── Motor bars ── */
+.motor-row{
+  display:flex;gap:20px;align-items:flex-end;margin-top:10px;
+}
+.motor-col{display:flex;flex-direction:column;align-items:center;gap:4px}
+.motor-label{font-size:.6rem;letter-spacing:.1em;font-weight:700;color:var(--muted)}
+.bar-track{
+  width:10px;height:60px;background:var(--border);border-radius:5px;
+  overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;
+}
+.bar-fill{
+  position:absolute;bottom:50%;width:100%;border-radius:4px;
+  background:var(--green);transition:height .08s,background .12s;height:0%;
+}
+.motor-pct{font-size:.62rem;font-weight:800;color:var(--accent);min-width:34px;text-align:center}
 
-  /* ── Speed row ── */
-  .speed-row {
-    width: 90%;
-    max-width: 400px;
-    margin-top: 18px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .speed-row label { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
-  #speed-slider {
-    flex: 1;
-    -webkit-appearance: none;
-    appearance: none;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--border);
-    outline: none;
-  }
-  #speed-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--accent);
-    cursor: pointer;
-    box-shadow: 0 0 8px var(--accent);
-  }
-  #speed-val {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--accent);
-    min-width: 38px;
-    text-align: right;
-  }
-
-  /* ── D-pad grid ── */
-  .dpad-wrap {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    padding: 10px 0 20px;
-  }
-  .dpad {
-    display: grid;
-    grid-template-columns: repeat(3, 90px);
-    grid-template-rows: repeat(3, 90px);
-    gap: 10px;
-  }
-  .btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 16px;
-    border: 1.5px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    font-size: 2rem;
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
-    transition: background 0.1s, transform 0.08s, box-shadow 0.1s;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .btn:active, .btn.pressed {
-    background: #1c2d42;
-    box-shadow: 0 0 18px var(--accent);
-    border-color: var(--accent);
-    transform: scale(0.94);
-  }
-  .btn.stop {
-    background: #2d1a1a;
-    border-color: var(--red);
-    color: var(--red);
-  }
-  .btn.stop:active, .btn.stop.pressed {
-    background: #4a1c1c;
-    box-shadow: 0 0 18px var(--red);
-  }
-  .btn.arc {
-    border-color: var(--yellow);
-    color: var(--yellow);
-    font-size: 1.5rem;
-  }
-  .btn.arc:active, .btn.arc.pressed {
-    background: #2d2a0d;
-    box-shadow: 0 0 18px var(--yellow);
-  }
-  .empty { visibility: hidden; }
-
-  /* ── Motor bars ── */
-  .motor-row {
-    display: flex;
-    gap: 24px;
-    margin-top: 10px;
-    margin-bottom: 8px;
-  }
-  .motor-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .motor-col span { font-size: 0.7rem; color: var(--muted); }
-  .motor-bar-wrap {
-    width: 14px; height: 80px;
-    background: var(--border);
-    border-radius: 7px;
-    overflow: hidden;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-  .motor-bar {
-    width: 100%;
-    position: absolute;
-    bottom: 50%;
-    border-radius: 4px;
-    transition: height 0.1s, background 0.1s;
-  }
-  .motor-val {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: var(--accent);
-    min-width: 36px;
-    text-align: center;
-  }
+/* ── D-pad ── */
+.dpad-area{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  width:100%;padding-bottom:env(safe-area-inset-bottom,12px);
+}
+.dpad{
+  display:grid;
+  grid-template-columns:repeat(3,var(--btn-size));
+  grid-template-rows:repeat(3,var(--btn-size));
+  gap:var(--gap);
+}
+.btn{
+  display:flex;align-items:center;justify-content:center;
+  border-radius:20px;border:1.5px solid var(--border);
+  background:var(--card);cursor:pointer;
+  font-size:clamp(1.4rem,4vw,1.9rem);
+  transition:background .1s,border-color .1s,box-shadow .1s,transform .08s;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:none;
+}
+.btn:active,.btn.on{
+  background:#0E2040;
+  border-color:var(--accent);
+  box-shadow:0 0 22px var(--accent-glow),inset 0 0 12px rgba(59,130,246,.15);
+  transform:scale(.92);
+}
+.btn.arc{color:var(--yellow);border-color:#2a2200}
+.btn.arc.on,.btn.arc:active{
+  background:#1a1500;border-color:var(--yellow);
+  box-shadow:0 0 22px rgba(245,158,11,.3);
+}
+.btn-stop{
+  background:rgba(239,68,68,.08);
+  border-color:rgba(239,68,68,.4);
+  color:var(--red);
+}
+.btn-stop.on,.btn-stop:active{
+  background:rgba(239,68,68,.18);border-color:var(--red);
+  box-shadow:0 0 24px var(--red-glow);transform:scale(.92);
+}
+.empty{visibility:hidden}
 </style>
 </head>
 <body>
 
-<header>
-  <h1>🤖 Robot Teleop</h1>
-  <span id="state-label">IDLE</span>
-  <div id="status-dot" class="idle"></div>
-</header>
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-title">
+    <svg viewBox="0 0 24 24"><path d="M12 2a2 2 0 012 2 2 2 0 01-2 2 2 2 0 01-2-2 2 2 0 012-2m-1 5h2v1h3a1 1 0 011 1v9a1 1 0 01-1 1H8a1 1 0 01-1-1V9a1 1 0 011-1h3V7m-3 4v7h8v-7H8m1 1h2v2H9v-2m4 0h2v2h-2v-2z"/></svg>
+    ROBOT TELEOP
+  </div>
+  <div class="conn-pill" id="conn">
+    <span class="dot"></span><span id="conn-text">CONNECTING</span>
+  </div>
+</div>
+
+<!-- State -->
+<div class="state-banner" id="state-lbl">STOPPED</div>
 
 <!-- Speed -->
-<div class="speed-row">
-  <label>Speed</label>
-  <input type="range" id="speed-slider" min="10" max="100" value="40" step="5">
-  <span id="speed-val">40%</span>
+<div class="speed-wrap">
+  <span class="speed-icon">🐢</span>
+  <input type="range" id="spd" min="10" max="100" value="40" step="5">
+  <span class="speed-icon">🐇</span>
+  <span class="speed-val" id="spd-val">40%</span>
 </div>
 
 <!-- Motor bars -->
 <div class="motor-row">
   <div class="motor-col">
-    <span>L</span>
-    <div class="motor-bar-wrap">
-      <div class="motor-bar" id="bar-left" style="height:0%;background:var(--green)"></div>
-    </div>
-    <span class="motor-val" id="val-left">0%</span>
+    <span class="motor-label">LEFT</span>
+    <div class="bar-track"><div class="bar-fill" id="bar-l"></div></div>
+    <span class="motor-pct" id="pct-l">0%</span>
   </div>
   <div class="motor-col">
-    <span>R</span>
-    <div class="motor-bar-wrap">
-      <div class="motor-bar" id="bar-right" style="height:0%;background:var(--green)"></div>
-    </div>
-    <span class="motor-val" id="val-right">0%</span>
+    <span class="motor-label">RIGHT</span>
+    <div class="bar-track"><div class="bar-fill" id="bar-r"></div></div>
+    <span class="motor-pct" id="pct-r">0%</span>
   </div>
 </div>
 
 <!-- D-pad -->
-<div class="dpad-wrap">
-  <div class="dpad">
-    <!-- Row 1 -->
-    <button class="btn arc" id="btn-arc-left"  data-cmd="arc_left"  >↰</button>
-    <button class="btn"     id="btn-forward"   data-cmd="forward"   >▲</button>
-    <button class="btn arc" id="btn-arc-right" data-cmd="arc_right" >↱</button>
-    <!-- Row 2 -->
-    <button class="btn"     id="btn-left"      data-cmd="left"      >◄</button>
-    <button class="btn stop"id="btn-stop"      data-cmd="stop"      >■</button>
-    <button class="btn"     id="btn-right"     data-cmd="right"     >►</button>
-    <!-- Row 3 -->
+<div class="dpad-area">
+  <div class="dpad" id="dpad">
+    <button class="btn arc"      id="b-arc_left"  >↰</button>
+    <button class="btn"          id="b-forward"   >▲</button>
+    <button class="btn arc"      id="b-arc_right" >↱</button>
+    <button class="btn"          id="b-left"      >◄</button>
+    <button class="btn btn-stop" id="b-stop"      >■</button>
+    <button class="btn"          id="b-right"     >►</button>
     <div class="empty"></div>
-    <button class="btn"     id="btn-backward"  data-cmd="backward"  >▼</button>
+    <button class="btn"          id="b-backward"  >▼</button>
     <div class="empty"></div>
   </div>
 </div>
 
 <script>
-  const slider   = document.getElementById('speed-slider');
-  const speedVal = document.getElementById('speed-val');
-  const stateLbl = document.getElementById('state-label');
-  const dot      = document.getElementById('status-dot');
-  const barL     = document.getElementById('bar-left');
-  const barR     = document.getElementById('bar-right');
-  const valL     = document.getElementById('val-left');
-  const valR     = document.getElementById('val-right');
+// ── Elements
+const spdSlider = document.getElementById('spd');
+const spdVal    = document.getElementById('spd-val');
+const stateLbl  = document.getElementById('state-lbl');
+const connEl    = document.getElementById('conn');
+const connTxt   = document.getElementById('conn-text');
+const barL      = document.getElementById('bar-l');
+const barR      = document.getElementById('bar-r');
+const pctL      = document.getElementById('pct-l');
+const pctR      = document.getElementById('pct-r');
 
-  let activeCmd  = null;
-  let sendTimer  = null;
-  let speed      = 0.40;
+let speed    = 0.40;
+let activeId = null;   // currently pressed button ID
+let loopTick = null;   // single setInterval for command sending
+let lastOk   = Date.now();
 
-  // ── Speed slider ──
-  slider.addEventListener('input', () => {
-    speed = parseInt(slider.value) / 100;
-    speedVal.textContent = slider.value + '%';
-    if (activeCmd && activeCmd !== 'stop') sendCmd(activeCmd);
+// ── Speed slider
+spdSlider.addEventListener('input', () => {
+  speed = spdSlider.value / 100;
+  spdVal.textContent = spdSlider.value + '%';
+  spdSlider.style.setProperty('--pct', spdSlider.value + '%');
+  // re-send current command with new speed
+  if (activeId && activeId !== 'stop') send(activeId);
+});
+spdSlider.style.setProperty('--pct', '40%');
+
+// ── HUD update
+const STATES = {
+  forward:'▲ FORWARD', backward:'▼ BACKWARD', left:'◄ SPIN LEFT',
+  right:'► SPIN RIGHT', arc_left:'↰ ARC LEFT', arc_right:'↱ ARC RIGHT',
+  stop:'■ STOPPED'
+};
+function hud(cmd, l, r) {
+  stateLbl.textContent = STATES[cmd] || cmd.toUpperCase();
+
+  const al = Math.abs(l), ar = Math.abs(r);
+  const cl = l >= 0 ? 'var(--green)' : 'var(--red)';
+  const cr = r >= 0 ? 'var(--green)' : 'var(--red)';
+  barL.style.height = (al * 100) + '%';
+  barR.style.height = (ar * 100) + '%';
+  barL.style.background = cl;
+  barR.style.background = cr;
+  pctL.textContent = (l >= 0 ? '+' : '') + Math.round(l * 100) + '%';
+  pctR.textContent = (r >= 0 ? '+' : '') + Math.round(r * 100) + '%';
+}
+
+// ── Fire-and-forget send (never awaits — can't block next command)
+function send(cmd) {
+  const body = JSON.stringify({cmd, speed});
+  // Use sendBeacon when stopping (guaranteed delivery on finger-lift)
+  if (cmd === 'stop' && navigator.sendBeacon) {
+    const blob = new Blob([body], {type:'application/json'});
+    navigator.sendBeacon('/cmd', blob);
+    hud('stop', 0, 0);
+    return;
+  }
+  fetch('/cmd', {method:'POST', headers:{'Content-Type':'application/json'}, body})
+    .then(r => r.json())
+    .then(d => { lastOk = Date.now(); hud(cmd, d.left, d.right); connOk(); })
+    .catch(() => connLost());
+}
+
+function connOk()   { connEl.className='conn-pill connected'; connTxt.textContent='CONNECTED'; }
+function connLost() { connEl.className='conn-pill'; connTxt.textContent='LOST'; }
+
+// ── Single command loop — sends every 90ms while a button is held
+function startLoop(cmd) {
+  stopLoop();   // always kill the old loop first
+  activeId = cmd;
+  send(cmd);
+  loopTick = setInterval(() => send(cmd), 90);
+}
+function stopLoop() {
+  if (loopTick) { clearInterval(loopTick); loopTick = null; }
+  activeId = null;
+}
+function pressStop() {
+  stopLoop();
+  activeId = 'stop';
+  send('stop');
+  hud('stop', 0, 0);
+}
+
+// ── Mark button visual state
+function setOn(id)  { document.getElementById('b-' + id)?.classList.add('on'); }
+function setOff(id) { document.getElementById('b-' + id)?.classList.remove('on'); }
+
+// ── Pointer Events (handles touch + mouse + stylus uniformly, no race conditions)
+document.querySelectorAll('.btn').forEach(btn => {
+  const cmd = btn.id.replace('b-', '');
+
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    btn.setPointerCapture(e.pointerId); // lock events to this element
+    if (activeId && activeId !== cmd) setOff(activeId);
+    setOn(cmd);
+    if (cmd === 'stop') { pressStop(); }
+    else                { startLoop(cmd); }
   });
 
-  // ── Update HUD ──
-  function updateHUD(cmd, left, right) {
-    stateLbl.textContent = cmd.toUpperCase().replace('_', ' ');
-    dot.className = cmd === 'stop' || cmd === 'idle' ? 'idle' : 'moving';
-
-    const pctL = Math.round(Math.abs(left) * 100);
-    const pctR = Math.round(Math.abs(right) * 100);
-    const colL = left >= 0 ? 'var(--green)' : 'var(--red)';
-    const colR = right >= 0 ? 'var(--green)' : 'var(--red)';
-
-    barL.style.height    = pctL + '%';
-    barR.style.height    = pctR + '%';
-    barL.style.background = colL;
-    barR.style.background = colR;
-    valL.textContent = (left >= 0 ? '+' : '') + (left * 100).toFixed(0) + '%';
-    valR.textContent = (right >= 0 ? '+' : '') + (right * 100).toFixed(0) + '%';
-  }
-
-  // ── Send command to Pi ──
-  async function sendCmd(cmd) {
-    try {
-      const res = await fetch('/cmd', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({cmd, speed})
-      });
-      const data = await res.json();
-      updateHUD(cmd, data.left, data.right);
-    } catch(e) {
-      dot.className = 'stopped';
-      stateLbl.textContent = 'DISCONNECTED';
-    }
-  }
-
-  // ── Continuous send while held ──
-  function startHold(cmd) {
-    activeCmd = cmd;
-    sendCmd(cmd);
-    sendTimer = setInterval(() => sendCmd(cmd), 80);
-  }
-
-  function stopHold() {
-    clearInterval(sendTimer);
-    sendTimer = null;
-    activeCmd = null;
-    sendCmd('stop');
-  }
-
-  // ── Button bindings ──
-  document.querySelectorAll('.btn[data-cmd]').forEach(btn => {
-    const cmd = btn.dataset.cmd;
-
-    // Touch events (mobile)
-    btn.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      btn.classList.add('pressed');
-      if (cmd === 'stop') { sendCmd('stop'); }
-      else { startHold(cmd); }
-    }, {passive: false});
-
-    btn.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      btn.classList.remove('pressed');
-      if (cmd !== 'stop') stopHold();
-    }, {passive: false});
-
-    // Mouse events (desktop fallback)
-    btn.addEventListener('mousedown', () => {
-      btn.classList.add('pressed');
-      if (cmd === 'stop') sendCmd('stop');
-      else startHold(cmd);
-    });
-    btn.addEventListener('mouseup', () => {
-      btn.classList.remove('pressed');
-      if (cmd !== 'stop') stopHold();
-    });
-    btn.addEventListener('mouseleave', () => {
-      if (btn.classList.contains('pressed')) {
-        btn.classList.remove('pressed');
-        if (cmd !== 'stop') stopHold();
-      }
-    });
+  btn.addEventListener('pointerup', e => {
+    e.preventDefault();
+    setOff(cmd);
+    if (cmd !== 'stop') pressStop();
   });
 
-  // ── Keyboard fallback (desktop) ──
-  const keyMap = {
-    'ArrowUp':'forward','ArrowDown':'backward',
-    'ArrowLeft':'left','ArrowRight':'right',
-    'w':'forward','s':'backward','a':'left','d':'right',
-    'q':'arc_left','e':'arc_right',' ':'stop'
-  };
-  const held = new Set();
-  document.addEventListener('keydown', e => {
-    if (held.has(e.key)) return;
-    held.add(e.key);
-    const cmd = keyMap[e.key];
-    if (!cmd) return;
-    const btn = document.querySelector(`[data-cmd="${cmd}"]`);
-    if (btn) btn.classList.add('pressed');
-    if (cmd === 'stop') sendCmd('stop');
-    else startHold(cmd);
+  btn.addEventListener('pointercancel', e => {
+    e.preventDefault();
+    setOff(cmd);
+    pressStop();
   });
-  document.addEventListener('keyup', e => {
-    held.delete(e.key);
-    const cmd = keyMap[e.key];
-    if (!cmd || cmd === 'stop') return;
-    const btn = document.querySelector(`[data-cmd="${cmd}"]`);
-    if (btn) btn.classList.remove('pressed');
-    stopHold();
-  });
+});
+
+// ── Keyboard (desktop / SSH testing)
+const KEY = {
+  ArrowUp:'forward', ArrowDown:'backward', ArrowLeft:'left', ArrowRight:'right',
+  w:'forward', s:'backward', a:'left', d:'right',
+  q:'arc_left', e:'arc_right', ' ':'stop'
+};
+const held = new Set();
+addEventListener('keydown', ev => {
+  const cmd = KEY[ev.key];
+  if (!cmd || held.has(ev.key)) return;
+  held.add(ev.key);
+  if (cmd === 'stop') pressStop();
+  else { setOn(cmd); startLoop(cmd); }
+});
+addEventListener('keyup', ev => {
+  const cmd = KEY[ev.key];
+  if (!cmd) return;
+  held.delete(ev.key);
+  setOff(cmd);
+  if (cmd !== 'stop') pressStop();
+});
+
+// ── Connection watchdog on client side
+setInterval(() => {
+  if (Date.now() - lastOk > 3000) connLost();
+}, 1000);
+
+// ── Initial ping
+fetch('/cmd', {method:'POST', headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({cmd:'stop', speed})})
+  .then(() => connOk()).catch(() => connLost());
 </script>
 </body>
-</html>
-"""
+</html>"""
 
-# ── Flask Routes ──────────────────────────────────────────────────────────────
+
+# ── Flask routes ──────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
     return render_template_string(HTML)
@@ -444,80 +412,56 @@ def command():
     global _last_cmd_ts
     _last_cmd_ts = time.time()
 
-    data  = request.get_json(force=True, silent=True) or {}
-    cmd   = data.get("cmd", "stop")
-    spd   = float(data.get("speed", base_speed))
-    spd   = max(0.0, min(1.0, spd))
+    data = request.get_json(force=True, silent=True) or {}
+    cmd  = data.get("cmd", "stop")
+    spd  = max(0.0, min(1.0, float(data.get("speed", base_speed))))
 
-    left  = 0.0
-    right = 0.0
-
-    if cmd == "forward":
-        left = right = spd
-    elif cmd == "backward":
-        left = right = -spd
-    elif cmd == "left":          # spin counter-clockwise in place
-        left  = -spd
-        right =  spd
-    elif cmd == "right":         # spin clockwise in place
-        left  =  spd
-        right = -spd
-    elif cmd == "arc_left":      # gentle left curve
-        left  =  spd * 0.35
-        right =  spd
-    elif cmd == "arc_right":     # gentle right curve
-        left  =  spd
-        right =  spd * 0.35
-    elif cmd == "stop":
-        left = right = 0.0
+    left = right = 0.0
+    if   cmd == "forward"   : left =  spd; right =  spd
+    elif cmd == "backward"  : left = -spd; right = -spd
+    elif cmd == "left"      : left = -spd; right =  spd
+    elif cmd == "right"     : left =  spd; right = -spd
+    elif cmd == "arc_left"  : left =  spd * 0.3; right = spd
+    elif cmd == "arc_right" : left =  spd; right = spd * 0.3
 
     if driver:
-        if cmd == "stop":
-            driver.stop()
-        else:
-            driver.set_motors(left, right)
+        driver.stop() if cmd == "stop" else driver.set_motors(left, right)
 
     current_cmd.update({"left": left, "right": right, "state": cmd})
-    log.info("CMD %-12s  L=%+.2f  R=%+.2f  speed=%.0f%%", cmd, left, right, spd * 100)
+    log.info("%-12s  L=%+.2f  R=%+.2f  spd=%.0f%%", cmd, left, right, spd * 100)
     return jsonify({"ok": True, "cmd": cmd, "left": left, "right": right})
 
 
-# ── Entry Point ───────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 def main():
     global driver, base_speed
 
-    parser = argparse.ArgumentParser(description="Mobile Web Teleop Server")
-    parser.add_argument("--port",  type=int,   default=5000,  help="HTTP port (default: 5000)")
-    parser.add_argument("--host",  type=str,   default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
-    parser.add_argument("--speed", type=float, default=0.40,  help="Default speed 0-1 (default: 0.40)")
+    parser = argparse.ArgumentParser(description="Mobile Web Teleop Server v2")
+    parser.add_argument("--port",  type=int,   default=5000)
+    parser.add_argument("--host",  type=str,   default="0.0.0.0")
+    parser.add_argument("--speed", type=float, default=0.40)
     args = parser.parse_args()
-
     base_speed = args.speed
 
     if MOTORS_AVAILABLE:
         driver = MotorDriver()
         log.info("MotorDriver initialized ✓")
     else:
-        log.warning("Running WITHOUT motor hardware (simulation mode)")
+        log.warning("Simulation mode — no GPIO hardware")
 
-    # Start watchdog thread
-    threading.Thread(target=_watchdog, daemon=True, name="MotorWatchdog").start()
+    threading.Thread(target=_watchdog, daemon=True, name="Watchdog").start()
 
-    # Print connection instructions
-    import socket
     try:
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
+        ip = socket.gethostbyname(socket.gethostname())
     except Exception:
-        local_ip = "YOUR_PI_IP"
+        ip = "YOUR_PI_IP"
 
     print("\n" + "═" * 52)
-    print("   🤖  ROBOT MOBILE TELEOP SERVER")
+    print("   🤖  ROBOT MOBILE TELEOP  (v2)")
     print("═" * 52)
-    print(f"   Open on your phone:")
-    print(f"   → http://{local_ip}:{args.port}")
-    print(f"   → http://{hostname}.local:{args.port}")
-    print(f"   (Phone must be on same WiFi as Pi)")
+    print(f"   http://{ip}:{args.port}")
+    print(f"   http://{socket.gethostname()}.local:{args.port}")
+    print("   (Phone must be on same WiFi as Pi)")
     print("═" * 52 + "\n")
 
     app.run(host=args.host, port=args.port, threaded=True)
