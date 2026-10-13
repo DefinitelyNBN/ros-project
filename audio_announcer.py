@@ -26,7 +26,7 @@ MSG_SHUTDOWN     = "Attendance system shutting down."
 
 # ── espeak settings ───────────────────────────────────────────────────────────
 ESPEAK_SPEED     = 155      # words per minute (120–180 recommended)
-ESPEAK_AMPLITUDE = 180      # volume 0–200
+ESPEAK_AMPLITUDE = 200      # volume 0–200 (200 = maximum)
 ESPEAK_PITCH     = 55       # pitch 0–99
 ESPEAK_VOICE     = "en"     # "en" | "en-us" | "en-gb" | "en+m3" for male voice
 

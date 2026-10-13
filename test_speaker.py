@@ -80,7 +80,7 @@ def test_espeak_direct():
         "espeak",
         "-v", "en",
         "-s", "155",    # speed
-        "-a", "180",    # amplitude / volume
+        "-a", "200",    # amplitude / volume (200 = max)
         "-p", "55",     # pitch
         text
     ]
