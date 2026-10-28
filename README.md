@@ -30,29 +30,62 @@
 
 ---
 
-## 🚀 Quick Launch Commands
+## 🎮 Command Cheat Sheet (Every Familiar Command Works!)
 
-### 1. Run Autonomous Security Patrol Bot:
+| Task | Command | What It Does |
+|---|---|---|
+| **Manual Keyboard Teleop** | `python3 teleop.py` | Drive robot via terminal keyboard (`W`, `A`, `S`, `D`, `Space` brake) |
+| **Mobile Web Joystick** | `python3 teleop_server.py` | Drive robot from your phone browser at `http://<pi-ip>:5000` |
+| **Autonomous Security Bot** | `python3 main.py` | Full system (Perimeter Roam + Live TFT + Alarms + Welcome) |
+| **Headless Security Bot** | `python3 headless.py` | Run over SSH without monitor / GUI |
+| **Stationary Guard Mode** | `python3 main.py --no-nav` | Runs camera, live TFT & alarms without wheel movement |
+| **Live Camera Web Stream** | `python3 camera_diagnostic.py` | View live camera & detection boxes in laptop browser |
+| **Register New Face** | `python3 register_face.py` | Add a new authorized person to the database |
+| **Test Speakers & Alarms** | `python3 test_speaker.py` | Test welcome greeting & intruder alarm sirens |
+| **Test Dual OLED Eyes** | `python3 robot_eyes.py` | Animate dual OLED robot eyes (blink, look, alert) |
+
+---
+
+## 🕹️ 1. Manual Robot Teleoperation
+
+### Option A — Keyboard Control over SSH:
 ```bash
-python3 security_bot.py
-# Or pure headless mode over SSH:
-python3 security_bot.py --headless
+python3 teleop.py
+# Controls:
+#   W / Up    : Forward
+#   S / Down  : Reverse
+#   A / Left  : Spin Left
+#   D / Right : Spin Right
+#   Space     : Emergency Stop (Brake)
+#   + / -     : Increase / Decrease speed
 ```
 
-### 2. Stationary Guard Mode (Camera & Alarms Active, No Wheel Movement):
+### Option B — Mobile Phone Web Joystick:
 ```bash
-python3 security_bot.py --no-nav
+python3 teleop_server.py
+# Open on your phone: http://<pi-ip>:5000
 ```
 
-### 3. Test Speakers & Security Alarms:
+---
+
+## 🛡️ 2. Autonomous Security & Surveillance Modes
+
+### Full Autonomous Patrol (Perimeter Roaming):
 ```bash
-python3 test_speaker.py
+python3 main.py
+# Or pure CLI over SSH:
+python3 headless.py
 ```
 
-### 4. Live Camera Telemetry in Web Browser:
+### Stationary Guard Mode (No Motor Movement):
+```bash
+python3 main.py --no-nav
+```
+
+### Live Camera Stream Verification:
 ```bash
 python3 camera_diagnostic.py
-# Open http://<pi-ip>:5000 in your browser
+# Open on your laptop/phone: http://<pi-ip>:5000
 ```
 
 ---
