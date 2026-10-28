@@ -39,40 +39,40 @@ try:
         line = ser.readline().decode('utf-8', errors='ignore').strip()
         print(f"    [Arduino Startup]: {line}")
 
-    # Test 1: Idle Screen
-    print("\n[1/3] Sending IDLE:0...")
+    # Test 1: Perimeter Patrol Radar
+    print("\n[1/3] Sending IDLE:0 (Perimeter Defense Radar)...")
     ser.write(b"IDLE:0\n")
     ser.flush()
     time.sleep(1)
     while ser.in_waiting:
         print(f"    [Arduino Response]: {ser.readline().decode('utf-8', errors='ignore').strip()}")
 
-    # Test 2: Green Checkmark
-    print("\n[2/3] Sending GREEN CHECKMARK (OK:Niyanth_B:AM.SC.U4AIE24163)...")
-    ser.write(b"OK:Niyanth_B:AM.SC.U4AIE24163\n")
+    # Test 2: Access Granted Welcome
+    print("\n[2/3] Sending AUTHORIZED WELCOME (OK:Niyanth:AUTHORIZED)...")
+    ser.write(b"OK:Niyanth:AUTHORIZED\n")
     ser.flush()
     time.sleep(1)
     while ser.in_waiting:
         print(f"    [Arduino Response]: {ser.readline().decode('utf-8', errors='ignore').strip()}")
 
-    print("\n[*] Check your Arduino screen now! Did it show the Green Checkmark?")
+    print("\n[*] Check your Arduino screen! Showing Green 'ACCESS GRANTED' welcome?")
     time.sleep(4)
 
-    # Test 3: Red X Mark
-    print("\n[3/3] Sending RED X MARK (UNKNOWN)...")
-    ser.write(b"UNKNOWN\n")
+    # Test 3: Intruder Alert
+    print("\n[3/3] Sending INTRUDER ALERT (INTRUDER)...")
+    ser.write(b"INTRUDER\n")
     ser.flush()
     time.sleep(1)
     while ser.in_waiting:
         print(f"    [Arduino Response]: {ser.readline().decode('utf-8', errors='ignore').strip()}")
 
-    print("\n[*] Did it show the Red X Mark?")
+    print("\n[*] Check your Arduino screen! Showing Red 'INTRUDER ALERT!'?")
     time.sleep(3)
 
     ser.write(b"IDLE:1\n")
     ser.flush()
     ser.close()
-    print("\n[✓] Diagnostic finished.")
+    print("\n[✓] Security TFT Diagnostic finished.")
 
 except Exception as e:
     print(f"[!] Serial Communication Error: {e}")

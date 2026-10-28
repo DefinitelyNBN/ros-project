@@ -156,121 +156,152 @@ void handleSerialCommand(String cmd) {
 }
 
 // -----------------------------------------------------------------------------
-// UI SCREEN: IDLE / SCANNING
+// UI SCREEN: IDLE / PERIMETER PATROL RADAR
 // -----------------------------------------------------------------------------
 void showIdleScreen(int count) {
   tft.fillScreen(BG_DARK);
 
-  // Top Header Banner
-  tft.fillRect(0, 0, 320, 35, DARKGREY);
-  tft.setTextColor(WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(20, 10);
-  tft.print(F("AUTONOMOUS ATTENDANCE"));
-
-  // Center Radar Reticle Icon
-  int cx = 160;
-  int cy = 115;
-  tft.drawCircle(cx, cy, 50, CYAN);
-  tft.drawCircle(cx, cy, 35, DARKCYAN);
-  tft.drawCircle(cx, cy, 20, NAVY);
-  tft.drawFastHLine(cx - 55, cy, 110, CYAN);
-  tft.drawFastVLine(cx, cy - 55, 110, CYAN);
-
-  // Subtitle
+  // Top Tactical Header Banner
+  tft.fillRect(0, 0, 320, 32, NAVY);
+  tft.drawFastHLine(0, 32, 320, CYAN);
   tft.setTextColor(CYAN);
   tft.setTextSize(2);
-  tft.setCursor(75, 180);
-  tft.print(F("SEARCHING FACES..."));
+  tft.setCursor(22, 8);
+  tft.print(F("[SEC-BOT] PATROL ACTIVE"));
 
-  // Bottom Status Bar with Counter
-  tft.fillRect(0, 210, 320, 30, BLACK);
-  tft.setTextColor(LIGHTGREY);
+  // Tactical Corner Brackets
+  int margin = 10;
+  int blen = 15;
+  // Top-left
+  tft.drawFastHLine(margin, 40, blen, CYAN);
+  tft.drawFastVLine(margin, 40, blen, CYAN);
+  // Top-right
+  tft.drawFastHLine(320 - margin - blen, 40, blen, CYAN);
+  tft.drawFastVLine(320 - margin, 40, blen, CYAN);
+  // Bottom-left
+  tft.drawFastHLine(margin, 205, blen, CYAN);
+  tft.drawFastVLine(margin, 205 - blen, blen, CYAN);
+  // Bottom-right
+  tft.drawFastHLine(320 - margin - blen, 205, blen, CYAN);
+  tft.drawFastVLine(320 - margin, 205 - blen, blen, CYAN);
+
+  // Center Security Radar Reticle
+  int cx = 160;
+  int cy = 120;
+  tft.drawCircle(cx, cy, 55, CYAN);
+  tft.drawCircle(cx, cy, 38, DARKCYAN);
+  tft.drawCircle(cx, cy, 20, NAVY);
+  tft.drawFastHLine(cx - 65, cy, 130, DARKCYAN);
+  tft.drawFastVLine(cx, cy - 65, 130, DARKCYAN);
+  tft.fillCircle(cx, cy, 3, CYAN);
+
+  // Subtitle
+  tft.setTextColor(WHITE);
   tft.setTextSize(1);
-  tft.setCursor(15, 220);
-  tft.print(F("STATUS: Active Radar"));
+  tft.setCursor(85, 185);
+  tft.print(F("PERIMETER SURVEILLANCE ZONE"));
 
-  tft.setTextColor(YELLOW);
-  tft.setCursor(200, 220);
-  tft.print(F("ATTENDED: "));
+  // Bottom Status Bar
+  tft.fillRect(0, 212, 320, 28, BLACK);
+  tft.drawFastHLine(0, 212, 320, DARKCYAN);
+  tft.setTextColor(GREEN);
+  tft.setTextSize(1);
+  tft.setCursor(12, 222);
+  tft.print(F("STATUS: SECURE"));
+
+  tft.setTextColor(CYAN);
+  tft.setCursor(185, 222);
+  tft.print(F("AUTHORIZED: "));
   tft.setTextColor(WHITE);
   tft.print(count);
 }
 
 // -----------------------------------------------------------------------------
-// UI SCREEN: GREEN CHECKMARK (VERIFIED ATTENDANCE)
+// UI SCREEN: AUTHORIZED ACCESS GRANTED (WELCOME BY NAME)
 // -----------------------------------------------------------------------------
 void showSuccessCheckmark(String name, String id) {
   tft.fillScreen(BG_DARK);
 
-  // Success Header
+  // Glowing Emerald Header
   tft.fillRect(0, 0, 320, 35, DARKGREEN);
+  tft.drawFastHLine(0, 35, 320, GREEN);
   tft.setTextColor(WHITE);
   tft.setTextSize(2);
-  tft.setCursor(45, 10);
-  tft.print(F("ATTENDANCE MARKED"));
+  tft.setCursor(55, 9);
+  tft.print(F("ACCESS GRANTED"));
 
-  // Green Checkmark Graphic
+  // Green Security Shield & Checkmark
   drawCheckmark(160, 95, 42, GREEN);
 
-  // Student Name
+  // Personalized Welcome Header
+  tft.setTextColor(GREEN);
+  tft.setTextSize(1);
+  tft.setCursor(105, 148);
+  tft.print(F("WELCOME AUTHORIZED:"));
+
+  // Full Name
   tft.setTextColor(WHITE);
   tft.setTextSize(2);
   int nameX = max(10, 160 - (int)(name.length() * 6));
-  tft.setCursor(nameX, 155);
+  tft.setCursor(nameX, 164);
   tft.print(name);
 
-  // Student Roll / ID
+  // Security Clearance / ID
+  tft.setTextColor(CYAN);
+  tft.setTextSize(1);
   if (id.length() > 0) {
-    tft.setTextColor(CYAN);
-    tft.setTextSize(1);
-    int idX = max(10, 160 - (int)(id.length() * 3));
-    tft.setCursor(idX, 185);
-    tft.print(F("ID: "));
+    int idX = max(10, 160 - (int)(id.length() * 3) - 15);
+    tft.setCursor(idX, 190);
+    tft.print(F("CLEARANCE: "));
     tft.print(id);
+  } else {
+    tft.setCursor(95, 190);
+    tft.print(F("IDENTITY VERIFIED"));
   }
 
-  // Bottom confirmation bar
+  // Bottom Confirmation Bar
   tft.fillRect(0, 210, 320, 30, DARKGREEN);
   tft.setTextColor(WHITE);
   tft.setTextSize(1);
-  tft.setCursor(95, 220);
-  tft.print(F("VERIFIED IN DATABASE"));
+  tft.setCursor(75, 220);
+  tft.print(F("PERIMETER PASS CONFIRMED"));
 }
 
 // -----------------------------------------------------------------------------
-// UI SCREEN: RED X MARK (UNKNOWN / UNREGISTERED PERSON)
+// UI SCREEN: INTRUDER ALERT! (UNFAMILIAR / UNREGISTERED PERSON)
 // -----------------------------------------------------------------------------
 void showUnknownCross() {
-  tft.fillScreen(BG_DARK);
+  tft.fillScreen(CRIMSON);
 
-  // Alert Header
-  tft.fillRect(0, 0, 320, 35, CRIMSON);
+  // Flashing Hazard Alert Header
+  tft.fillRect(0, 0, 320, 38, RED);
+  tft.drawFastHLine(0, 38, 320, WHITE);
   tft.setTextColor(WHITE);
   tft.setTextSize(2);
-  tft.setCursor(75, 10);
-  tft.print(F("ACCESS DENIED"));
+  tft.setCursor(35, 11);
+  tft.print(F("INTRUDER ALERT!"));
 
-  // Red X Cross Graphic
-  drawCross(160, 95, 42, RED);
+  // High-Visibility Hazard Cross
+  drawCross(160, 100, 44, WHITE);
 
-  // Warning text
-  tft.setTextColor(RED);
+  // Threat Warning Text
+  tft.setTextColor(YELLOW);
   tft.setTextSize(2);
-  tft.setCursor(75, 155);
-  tft.print(F("UNREGISTERED"));
+  tft.setCursor(45, 158);
+  tft.print(F("UNFAMILIAR FACE"));
 
-  tft.setTextColor(LIGHTGREY);
-  tft.setTextSize(1);
-  tft.setCursor(85, 185);
-  tft.print(F("Face Not Found In Database"));
-
-  // Bottom alert bar
-  tft.fillRect(0, 210, 320, 30, CRIMSON);
   tft.setTextColor(WHITE);
   tft.setTextSize(1);
-  tft.setCursor(75, 220);
-  tft.print(F("PLEASE REGISTER YOUR FACE"));
+  tft.setCursor(65, 188);
+  tft.print(F("SECURITY SIREN TRIGGERED"));
+
+  // Bottom Warning Banner
+  tft.fillRect(0, 210, 320, 30, RED);
+  tft.drawFastHLine(0, 210, 320, WHITE);
+  tft.setTextColor(WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(55, 220);
+  tft.print(F("WARNING: STEP BACK FROM ROBOT"));
 }
 
 // -----------------------------------------------------------------------------
@@ -282,7 +313,7 @@ void drawCheckmark(int cx, int cy, int radius, uint16_t color) {
     tft.drawCircle(cx, cy, r, color);
   }
 
-  // Inner thick checkmark polyline: (-18, 0) -> (-5, 15) -> (20, -15)
+  // Inner thick checkmark polyline: (-20, 0) -> (-6, 16) -> (22, -14)
   for (int w = -3; w <= 3; w++) {
     tft.drawLine(cx - 20, cy + w, cx - 6, cy + 16 + w, color);
     tft.drawLine(cx - 6, cy + 16 + w, cx + 22, cy - 14 + w, color);
@@ -290,7 +321,7 @@ void drawCheckmark(int cx, int cy, int radius, uint16_t color) {
 }
 
 // -----------------------------------------------------------------------------
-// GRAPHICS HELPER: DRAW THICK RED CROSS (✖)
+// GRAPHICS HELPER: DRAW THICK RED/WHITE HAZARD CROSS (✖)
 // -----------------------------------------------------------------------------
 void drawCross(int cx, int cy, int radius, uint16_t color) {
   // Outer circle ring
@@ -299,8 +330,8 @@ void drawCross(int cx, int cy, int radius, uint16_t color) {
   }
 
   // Thick X cross lines
-  int offset = 18;
-  for (int w = -3; w <= 3; w++) {
+  int offset = 20;
+  for (int w = -4; w <= 4; w++) {
     tft.drawLine(cx - offset, cy - offset + w, cx + offset, cy + offset + w, color);
     tft.drawLine(cx - offset, cy + offset + w, cx + offset, cy - offset + w, color);
   }

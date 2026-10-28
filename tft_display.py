@@ -297,30 +297,30 @@ class TFTDisplay:
             except Exception:
                 pass
 
-    # ── Rendering: Green Checkmark ───────────────────────────────────────────
+    # ── Rendering: Access Granted Welcome Screen ────────────────────────────
 
     def _render_success(self, name: str, student_id: str, time_str: str) -> Image.Image:
         w, h = self.width, self.height
-        # Deep dark emerald background with subtle border
-        img  = Image.new("RGB", (w, h), (10, 24, 16))
+        # Deep dark emerald background with glowing border
+        img  = Image.new("RGB", (w, h), (8, 26, 14))
         draw = ImageDraw.Draw(img)
 
         # Outer success border glow
-        draw.rectangle([(2, 2), (w - 3, h - 3)], outline=(63, 185, 80), width=2)
+        draw.rectangle([(2, 2), (w - 3, h - 3)], outline=(63, 185, 80), width=3)
 
-        # Top pill header
-        header_text = "VERIFIED • ATTENDANCE MARKED"
-        draw.text((w // 2, int(h * 0.10)), header_text, fill=(63, 185, 80),
+        # Top banner
+        header_text = "✅ ACCESS GRANTED • IDENTITY VERIFIED"
+        draw.text((w // 2, int(h * 0.10)), header_text, fill=(126, 231, 135),
                   font=self.font_tiny, anchor="mm")
 
-        # ── Green Checkmark Circle ──
+        # ── Green Security Shield / Circle ──
         cx = w // 2
         cy = int(h * 0.40)
         radius = int(min(w, h) * 0.22)
 
         # Outer soft glow circle
         draw.ellipse([cx - radius - 3, cy - radius - 3, cx + radius + 3, cy + radius + 3],
-                     fill=(20, 50, 32), outline=(46, 160, 67), width=1)
+                     fill=(16, 45, 26), outline=(46, 160, 67), width=1)
 
         # Main solid emerald circle
         draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
@@ -331,111 +331,118 @@ class TFTDisplay:
         p2 = (cx - radius * 0.08, cy + radius * 0.42)
         p3 = (cx + radius * 0.48, cy - radius * 0.40)
         check_width = max(3, int(radius * 0.20))
-
         draw.line([p1, p2, p3], fill=(255, 255, 255), width=check_width, joint="curve")
 
-        # ── Student Name & ID ──
-        # Truncate long names gracefully
-        display_name = name if len(name) <= 20 else name[:18] + "…"
-        draw.text((w // 2, int(h * 0.72)), display_name, fill=(240, 246, 252),
+        # ── Welcome Label & Name ──
+        display_name = name if len(name) <= 18 else name[:16] + "…"
+        draw.text((w // 2, int(h * 0.70)), f"WELCOME: {display_name.upper()}", fill=(240, 246, 252),
                   font=self.font_name, anchor="mm")
 
-        # Student ID badge
-        id_badge = f"ID: {student_id}  •  {time_str}"
+        # Clearance ID badge
+        id_badge = f"CLEARANCE: AUTHORIZED  •  {time_str}"
         draw.text((w // 2, int(h * 0.88)), id_badge, fill=(126, 231, 135),
                   font=self.font_badge, anchor="mm")
 
         return img
 
-    # ── Rendering: Red X Mark ────────────────────────────────────────────────
+    # ── Rendering: Red Intruder Alert Screen ─────────────────────────────────
 
     def _render_unknown(self, time_str: str) -> Image.Image:
         w, h = self.width, self.height
-        # Deep dark crimson background with warning border
-        img  = Image.new("RGB", (w, h), (26, 12, 14))
+        # Deep dark crimson background with flashing alert border
+        img  = Image.new("RGB", (w, h), (35, 8, 12))
         draw = ImageDraw.Draw(img)
 
-        # Outer warning border glow
-        draw.rectangle([(2, 2), (w - 3, h - 3)], outline=(248, 81, 73), width=2)
+        # Outer bold hazard alert border
+        draw.rectangle([(2, 2), (w - 3, h - 3)], outline=(255, 50, 50), width=4)
 
         # Top pill header
-        header_text = "ACCESS DENIED • NOT REGISTERED"
-        draw.text((w // 2, int(h * 0.10)), header_text, fill=(248, 81, 73),
+        header_text = "🚨 INTRUDER ALERT! PERIMETER BREACH 🚨"
+        draw.text((w // 2, int(h * 0.10)), header_text, fill=(255, 220, 220),
                   font=self.font_tiny, anchor="mm")
 
-        # ── Red X Circle ──
+        # ── Red Hazard Circle ──
         cx = w // 2
         cy = int(h * 0.40)
         radius = int(min(w, h) * 0.22)
 
         # Outer soft glow circle
         draw.ellipse([cx - radius - 3, cy - radius - 3, cx + radius + 3, cy + radius + 3],
-                     fill=(60, 20, 25), outline=(218, 54, 51), width=1)
+                     fill=(80, 15, 20), outline=(230, 40, 40), width=2)
 
         # Main solid crimson circle
         draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
-                     fill=(180, 36, 42), outline=(248, 81, 73), width=2)
+                     fill=(195, 25, 30), outline=(255, 80, 80), width=2)
 
         # Vectorized thick white X inside circle
         offset = radius * 0.38
-        x_width = max(3, int(radius * 0.20))
-        # Top-left to bottom-right
+        x_width = max(4, int(radius * 0.22))
         draw.line([(cx - offset, cy - offset), (cx + offset, cy + offset)],
                   fill=(255, 255, 255), width=x_width)
-        # Top-right to bottom-left
         draw.line([(cx + offset, cy - offset), (cx - offset, cy + offset)],
                   fill=(255, 255, 255), width=x_width)
 
         # ── Warning Labels ──
-        draw.text((w // 2, int(h * 0.72)), "UNKNOWN PERSON", fill=(248, 81, 73),
+        draw.text((w // 2, int(h * 0.70)), "UNFAMILIAR TARGET", fill=(255, 80, 80),
                   font=self.font_name, anchor="mm")
 
-        draw.text((w // 2, int(h * 0.88)), "Not Found in Database", fill=(255, 160, 160),
+        draw.text((w // 2, int(h * 0.88)), "SIREN SOUNDING • STEP BACK!", fill=(255, 200, 200),
                   font=self.font_badge, anchor="mm")
 
         return img
 
-    # ── Rendering: Idle / Scanning Screen ────────────────────────────────────
+    # ── Rendering: Security Patrol Radar Screen ──────────────────────────────
 
     def _render_idle(self) -> Image.Image:
         w, h = self.width, self.height
-        img  = Image.new("RGB", (w, h), (13, 17, 23))
+        img  = Image.new("RGB", (w, h), (10, 14, 22))
         draw = ImageDraw.Draw(img)
 
-        # Subtle dark border
-        draw.rectangle([(1, 1), (w - 2, h - 2)], outline=(48, 54, 61), width=1)
+        # Subtle dark border with tactical brackets
+        draw.rectangle([(1, 1), (w - 2, h - 2)], outline=(30, 42, 60), width=1)
+
+        # Corner brackets
+        b = 12
+        draw.line([(4, 4), (4 + b, 4)], fill=(56, 139, 253), width=2)
+        draw.line([(4, 4), (4, 4 + b)], fill=(56, 139, 253), width=2)
+        draw.line([(w - 5, 4), (w - 5 - b, 4)], fill=(56, 139, 253), width=2)
+        draw.line([(w - 5, 4), (w - 5, 4 + b)], fill=(56, 139, 253), width=2)
+        draw.line([(4, h - 5), (4 + b, h - 5)], fill=(56, 139, 253), width=2)
+        draw.line([(4, h - 5), (4, h - 5 - b)], fill=(56, 139, 253), width=2)
+        draw.line([(w - 5, h - 5), (w - 5 - b, h - 5)], fill=(56, 139, 253), width=2)
+        draw.line([(w - 5, h - 5), (w - 5, h - 5 - b)], fill=(56, 139, 253), width=2)
 
         # Header Title
-        draw.text((w // 2, int(h * 0.12)), "🤖 ROS ATTENDANCE BOT", fill=(88, 166, 255),
+        draw.text((w // 2, int(h * 0.12)), "🛡️ ROS SECURITY DEFENSE BOT", fill=(56, 139, 253),
                   font=self.font_title, anchor="mm")
 
-        # Center Radar / Face Target Reticle
+        # Center Radar Reticle
         cx = w // 2
         cy = int(h * 0.44)
         r  = int(min(w, h) * 0.18)
 
         # Concentric radar rings
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(48, 54, 61), width=1)
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(38, 70, 110), width=1)
         draw.ellipse([cx - r * 0.6, cy - r * 0.6, cx + r * 0.6, cy + r * 0.6],
-                     outline=(33, 38, 45), width=1)
+                     outline=(25, 45, 75), width=1)
 
         # Target crosshairs
-        draw.line([(cx - r - 8, cy), (cx - r + 8, cy)], fill=(88, 166, 255), width=2)
-        draw.line([(cx + r - 8, cy), (cx + r + 8, cy)], fill=(88, 166, 255), width=2)
-        draw.line([(cx, cy - r - 8), (cx, cy - r + 8)], fill=(88, 166, 255), width=2)
-        draw.line([(cx, cy + r - 8), (cx, cy + r + 8)], fill=(88, 166, 255), width=2)
+        draw.line([(cx - r - 8, cy), (cx + r + 8, cy)], fill=(56, 139, 253), width=1)
+        draw.line([(cx, cy - r - 8), (cx, cy + r + 8)], fill=(56, 139, 253), width=1)
 
         # Center pulse dot
-        draw.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=(88, 166, 255))
+        draw.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=(56, 139, 253))
 
         # Status text
-        draw.text((w // 2, int(h * 0.70)), "SCANNING FOR FACES", fill=(139, 148, 158),
+        draw.text((w // 2, int(h * 0.70)), "PERIMETER SCANNING ACTIVE", fill=(139, 148, 158),
                   font=self.font_sub, anchor="mm")
 
         # Bottom stats bar
-        stats = f"Present: {self._total_count}  •  {datetime.now().strftime('%H:%M')}"
+        stats = f"DEFENSE: SECURE  •  AUTHORIZED: {self._total_count}"
         draw.text((w // 2, int(h * 0.88)), stats, fill=(63, 185, 80),
                   font=self.font_badge, anchor="mm")
+
+        return img
 
         return img
 

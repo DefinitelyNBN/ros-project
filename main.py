@@ -560,7 +560,7 @@ class AttendanceApp(Tk):
         bar.pack_propagate(False)
 
         # Title
-        Label(bar, text="🤖  ROS Attendance Bot",
+        Label(bar, text="🛡️  ROS Security Patrol Bot",
               bg=T["bg_card"], fg=T["accent"],
               font=T["font_head"]).pack(side="left", padx=20, pady=10)
 
@@ -570,21 +570,21 @@ class AttendanceApp(Tk):
               bg=T["bg_card"], fg=T["text_muted"],
               font=T["font_body"]).pack(side="right", padx=16)
 
-        # Navigation State Badge
-        self.nav_var = StringVar(value="NAV: SEARCHING 🔄")
+        # Navigation / Defense State Badge
+        self.nav_var = StringVar(value="PATROL: PERIMETER ROAMING 🛡️")
         self.nav_badge = Label(bar, textvariable=self.nav_var,
-                               bg="#1C2D42", fg="#58A6FF",
+                               bg="#1A3326", fg="#3FB950",
                                font=T["font_small"], padx=8, pady=3)
         self.nav_badge.pack(side="right", padx=10)
 
         # Status badge
-        self.status_var = StringVar(value="Ready")
+        self.status_var = StringVar(value="Defense Active")
         Label(bar, textvariable=self.status_var,
               bg=T["bg_card"], fg=T["accent2"],
               font=T["font_small"]).pack(side="right", padx=12)
 
-        # Count badge
-        self.count_var = StringVar(value="Present: 0")
+        # Verified Count badge
+        self.count_var = StringVar(value="Authorized: 0")
         Label(bar, textvariable=self.count_var,
               bg=T["bg_card"], fg=T["text_primary"],
               font=T["font_title"]).pack(side="right", padx=16)
@@ -637,20 +637,20 @@ class AttendanceApp(Tk):
                                    width=22)
         self.pause_btn.pack(fill="x", pady=2)
 
-        make_btn(btns, "📊  Export Excel",
+        make_btn(btns, "📊  Export Security Log",
                  self._export_excel, bg=T["accent2"], width=22).pack(fill="x", pady=2)
 
-        make_btn(btns, "📂  Open Records",
+        make_btn(btns, "📂  Open Security Records",
                  self._open_records_folder, bg=T["bg_panel"],
                  fg=T["text_muted"], width=22).pack(fill="x", pady=2)
 
-        # Attendance Table
+        # Security Log Table
         tbl_frame = Frame(right, bg=T["bg_card"])
         tbl_frame.grid(row=1, column=0, sticky="nsew")
         tbl_frame.rowconfigure(1, weight=1)
         tbl_frame.columnconfigure(0, weight=1)
 
-        Label(tbl_frame, text="📋  Today's Attendance",
+        Label(tbl_frame, text="📋  Security Incident & Access Log",
               bg=T["bg_card"], fg=T["accent"],
               font=T["font_title"]).grid(row=0, column=0, pady=(12, 6), padx=12, sticky="w")
 
