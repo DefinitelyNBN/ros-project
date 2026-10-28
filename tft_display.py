@@ -182,6 +182,55 @@ class TFTDisplay:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def show_live_frame(self, frame_bgr: np.ndarray, status_overlay: str = None, alert_mode: str = None, target_name: str = None):
+        """
+        Renders the real-time live camera feed onto the TFT display (framebuffer or preview)
+        with futuristic Security Patrol HUD overlays.
+        """
+        with self._lock:
+            # If in an active alert lock, keep showing alert mode overlay
+            active_alert = alert_mode or (self._current_mode if self._current_mode in ("intruder", "success") else None)
+
+            try:
+                import cv2
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(frame_rgb).resize((self.width, self.height), Image.Resampling.BILINEAR)
+                draw = ImageDraw.Draw(pil_img)
+
+                w, h = self.width, self.height
+
+                if active_alert == "intruder":
+                    # Flashing Red Alert HUD
+                    draw.rectangle([(0, 0), (w, 24)], fill=(190, 20, 20))
+                    draw.text((w // 2, 12), "🚨 INTRUDER ALERT! UNVERIFIED 🚨", fill=(255, 255, 255), font=self.font_tiny, anchor="mm")
+                    draw.rectangle([(2, 2), (w - 3, h - 3)], outline=(230, 40, 40), width=3)
+                    draw.rectangle([(0, h - 22), (w, h)], fill=(40, 10, 10))
+                    draw.text((w // 2, h - 11), f"UNFAMILIAR FACE • {datetime.now().strftime('%H:%M:%S')}", fill=(255, 120, 120), font=self.font_tiny, anchor="mm")
+                elif active_alert == "success" or active_alert == "authorized":
+                    # Green Authorized HUD
+                    name_str = target_name or "Authorized Personnel"
+                    draw.rectangle([(0, 0), (w, 24)], fill=(20, 120, 40))
+                    draw.text((w // 2, 12), f"✅ ACCESS GRANTED: {name_str[:16]}", fill=(255, 255, 255), font=self.font_tiny, anchor="mm")
+                    draw.rectangle([(2, 2), (w - 3, h - 3)], outline=(40, 200, 60), width=2)
+                    draw.rectangle([(0, h - 22), (w, h)], fill=(10, 30, 15))
+                    draw.text((w // 2, h - 11), f"IDENTITY VERIFIED • {datetime.now().strftime('%H:%M:%S')}", fill=(100, 255, 120), font=self.font_tiny, anchor="mm")
+                else:
+                    # Normal Patrol HUD overlay
+                    draw.rectangle([(0, 0), (w, 20)], fill=(10, 14, 20))
+                    stat = status_overlay or self._status_text or "PERIMETER PATROL ACTIVE"
+                    draw.text((w // 2, 10), f"[SEC-BOT] {stat[:26]}", fill=(56, 139, 253), font=self.font_tiny, anchor="mm")
+                    # Center targeting crosshair
+                    cx, cy = w // 2, h // 2
+                    draw.line([(cx - 10, cy), (cx + 10, cy)], fill=(56, 139, 253), width=1)
+                    draw.line([(cx, cy - 10), (cx, cy + 10)], fill=(56, 139, 253), width=1)
+                    # Bottom bar
+                    draw.rectangle([(0, h - 18), (w, h)], fill=(10, 14, 20))
+                    draw.text((w // 2, h - 9), f"LIVE CAMERA • {datetime.now().strftime('%H:%M:%S')}", fill=(139, 148, 158), font=self.font_tiny, anchor="mm")
+
+                self._output(pil_img)
+            except Exception as e:
+                log.debug("TFT live frame stream error: %s", e)
+
     def show_idle(self, total_count: int = None):
         """Renders the idle / scanning telemetry screen."""
         with self._lock:
@@ -192,41 +241,40 @@ class TFTDisplay:
             self._output(img)
             self._send_arduino(f"IDLE:{self._total_count}")
 
-    def show_success(self, name: str, student_id: str, time_str: str = None):
+    def show_success(self, name: str, student_id: str = None, time_str: str = None):
         """
-        Displays a bright GREEN CHECKMARK with student details.
-        Automatically reverts to idle screen after TFT_FEEDBACK_HOLD seconds.
+        Displays a bright GREEN VERIFICATION for familiar person.
+        Reverts to live patrol feed after TFT_FEEDBACK_HOLD seconds.
         """
         with self._lock:
             self._cancel_timer()
             self._current_mode = "success"
             t_str = time_str or datetime.now().strftime("%H:%M:%S")
-            img = self._render_success(name, student_id, t_str)
+            sid = student_id or "AUTHORIZED"
+            img = self._render_success(name, sid, t_str)
             self._output(img)
-            self._send_arduino(f"OK:{name}:{student_id}")
-            log.info("TFT: Displaying [GREEN CHECKMARK] for %s (%s)", name, student_id)
+            self._send_arduino(f"OK:{name}:{sid}")
+            log.info("TFT: Displaying [AUTHORIZED PERSONNEL] for %s", name)
             self._schedule_revert()
 
     def show_unknown(self, time_str: str = None):
         """
-        Displays a prominent RED X MARK for unrecognized / unregistered person.
-        Automatically reverts to idle screen after TFT_FEEDBACK_HOLD seconds.
+        Displays a prominent RED INTRUDER ALERT for unfamiliar person.
+        Reverts to live patrol feed after TFT_FEEDBACK_HOLD seconds.
         """
         with self._lock:
             self._cancel_timer()
-            self._current_mode = "unknown"
+            self._current_mode = "intruder"
             t_str = time_str or datetime.now().strftime("%H:%M:%S")
             img = self._render_unknown(t_str)
             self._output(img)
-            self._send_arduino("UNKNOWN")
-            log.info("TFT: Displaying [RED X MARK] - Unrecognized person")
+            self._send_arduino("INTRUDER")
+            log.info("TFT: Displaying [RED INTRUDER ALERT] - Unfamiliar face")
             self._schedule_revert()
 
     def update_status(self, text: str):
-        """Update status message when in idle mode."""
+        """Update status message."""
         self._status_text = text
-        if self._current_mode == "idle":
-            self.show_idle()
 
     def close(self):
         """Clean up display buffers."""

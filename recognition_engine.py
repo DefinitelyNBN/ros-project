@@ -252,8 +252,8 @@ class RecognitionEngine:
                     name     = self._known_names[best_idx]
                     sid      = self._known_ids[best_idx]
                     conf_pct = int(confidence * 100)
-                    label    = f"{name} ({conf_pct}%)"
-                    color    = (57, 255, 20)   # Neon Green
+                    label    = f"AUTHORIZED: {name} ({conf_pct}%)"
+                    color    = (57, 255, 20)   # Bright Neon Green
                     txt_col  = (0, 0, 0)
 
                     # Confirmation gate
@@ -266,14 +266,16 @@ class RecognitionEngine:
                             self._confirmed_ids.add(sid)
                             self.on_face_detected(name, sid, frame_copy, [full_box])
                 else:
-                    label    = "Unknown"
-                    color    = (0, 100, 255)   # Amber/Orange
+                    label    = "🚨 INTRUDER / UNKNOWN"
+                    color    = (0, 0, 255)     # Bright Red for Intruder
                     txt_col  = (255, 255, 255)
                     self._update_confirmation("__unknown__")
                     if self._is_confirmed("__unknown__"):
                         now = time.time()
                         if now - self._last_unknown_alert > config.TFT_FEEDBACK_HOLD:
                             self._last_unknown_alert = now
+                            if hasattr(self.attendance, "log_intruder"):
+                                self.attendance.log_intruder(frame_copy)
                             self.on_unknown_detected(frame_copy, [full_box])
 
                 new_detections.append((full_box, label, color, txt_col))

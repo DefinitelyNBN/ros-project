@@ -63,33 +63,41 @@ T = config.THEME
 # ─────────────────────────────────────────────────────────────────────────────
 # ROS 2 Humble Autonomous Navigation State Machine Controller
 # ─────────────────────────────────────────────────────────────────────────────
-class RobotNavigationFSM:
+# ROS 2 Autonomous Security Patrol & Perimeter Roaming FSM
+# ─────────────────────────────────────────────────────────────────────────────
+class SecurityPatrolFSM:
     """
-    Manages autonomous movement and state transitions:
-      - 'SEARCHING' : Rotates in place (angular.z = 0.3) to scan environment
-      - 'LOCKED'    : Freezes all movement (0.0 vel) for 5s cooldown when attendance is verified
-    Publishes to /cmd_vel and /attendance/* topics.
+    Autonomous Perimeter Security Patrol State Machine:
+      - 'PATROL_FORWARD' : Roams straight along perimeter boundary (linear.x = 0.35)
+      - 'PATROL_TURN'    : Turns at perimeter corner (angular.z = 0.30)
+      - 'INTRUDER_ALERT' : Halts (0.0), locks onto intruder, sounds alarm, alerts ROS
+      - 'AUTHORIZED'     : Halts (0.0), greets familiar person by name, cooldown, then resumes patrol
     """
 
-    STATE_SEARCHING = "SEARCHING"
-    STATE_LOCKED    = "LOCKED"
-    LOCKED_COOLDOWN = 5.0  # seconds to hold position after face recognition
+    STATE_PATROL_FORWARD = "PATROL_FORWARD"
+    STATE_PATROL_TURN    = "PATROL_TURN"
+    STATE_INTRUDER_ALERT = "INTRUDER_ALERT"
+    STATE_AUTHORIZED     = "AUTHORIZED"
+
+    # Backward compatibility aliases
+    STATE_SEARCHING = "PATROL_FORWARD"
+    STATE_LOCKED    = "INTRUDER_ALERT"
 
     def __init__(self, on_state_changed=None, enabled=True):
         self.enabled = enabled
         self.on_state_changed = on_state_changed or (lambda s: None)
         self._state_lock       = threading.Lock()
-        self._state            = self.STATE_SEARCHING
+        self._state            = self.STATE_PATROL_FORWARD
+        self._state_start_time = time.time()
         self._locked_timestamp = 0.0
         self._running          = True
 
         self._ros2_node        = None
         self._cmd_vel_pub      = None
         self._pub_state        = None
-        self._pub_student_id   = None
-        self._pub_student_name = None
-        self._pub_total_count  = None
-        self._pub_unknown      = None
+        self._pub_person_id    = None
+        self._pub_person_name  = None
+        self._pub_alert        = None
 
         self._motor_driver     = None
         try:
@@ -100,7 +108,7 @@ class RobotNavigationFSM:
 
         if self.enabled:
             self._init_ros2()
-            self._timer_thread = threading.Thread(target=self._control_loop, daemon=True, name="NavFSM")
+            self._timer_thread = threading.Thread(target=self._control_loop, daemon=True, name="SecurityPatrolFSM")
             self._timer_thread.start()
 
     def _init_ros2(self):
@@ -111,23 +119,22 @@ class RobotNavigationFSM:
 
             if not rclpy.ok():
                 rclpy.init()
-            self._ros2_node = rclpy.create_node("attendance_navigation_node")
+            self._ros2_node = rclpy.create_node("security_patrol_node")
             self._cmd_vel_pub      = self._ros2_node.create_publisher(Twist, "/cmd_vel", 10)
-            self._pub_state        = self._ros2_node.create_publisher(String, "/attendance/state", 10)
-            self._pub_student_id   = self._ros2_node.create_publisher(String, "/attendance/student_id", 10)
-            self._pub_student_name = self._ros2_node.create_publisher(String, "/attendance/student_name", 10)
-            self._pub_total_count  = self._ros2_node.create_publisher(Int32, "/attendance/total_count", 10)
-            self._pub_unknown      = self._ros2_node.create_publisher(String, "/attendance/unknown_alert", 10)
+            self._pub_state        = self._ros2_node.create_publisher(String, "/security/state", 10)
+            self._pub_person_id    = self._ros2_node.create_publisher(String, "/security/verified_id", 10)
+            self._pub_person_name  = self._ros2_node.create_publisher(String, "/security/verified_name", 10)
+            self._pub_alert        = self._ros2_node.create_publisher(String, "/security/intruder_alert", 10)
 
-            # Spin in background thread so ROS 2 callbacks & publishers run smoothly
+            # Background ROS spin
             self._spin_thread = threading.Thread(
                 target=lambda: rclpy.spin(self._ros2_node),
                 daemon=True, name="ROS2Spin"
             )
             self._spin_thread.start()
-            log.info("ROS 2 Humble /cmd_vel and /attendance/* topics initialized")
+            log.info("ROS 2 Security topics (/cmd_vel, /security/*) active.")
         except ImportError:
-            log.info("ROS 2 (rclpy) not found in environment. Running Navigation FSM in standalone mode.")
+            log.info("ROS 2 (rclpy) not found. Security Patrol FSM running in hardware-direct mode.")
         except Exception as e:
             log.warning("Could not initialize ROS 2 node: %s", e)
 
@@ -137,60 +144,115 @@ class RobotNavigationFSM:
             start_t = time.time()
             with self._state_lock:
                 now = time.time()
-                if self._state == self.STATE_LOCKED:
-                    if now - self._locked_timestamp >= self.LOCKED_COOLDOWN:
-                        self._state = self.STATE_SEARCHING
-                        log.info("🔄 [FSM -> SEARCHING] 5s cooldown elapsed. Resuming rotational scan.")
-                        self._publish_state_str(self.STATE_SEARCHING)
-                        try:
-                            self.on_state_changed(self.STATE_SEARCHING)
-                        except Exception:
-                            pass
-                    else:
-                        self._publish_stop()
-                elif self._state == self.STATE_SEARCHING:
-                    self._publish_search_spin()
+                elapsed = now - self._state_start_time
 
-            elapsed = time.time() - start_t
-            time.sleep(max(0.01, rate - elapsed))
+                if self._state == self.STATE_INTRUDER_ALERT:
+                    # Halt robot and maintain intruder alert lock
+                    self._publish_stop()
+                    if now - self._locked_timestamp >= config.INTRUDER_HOLD_SECONDS:
+                        self._transition_to(self.STATE_PATROL_FORWARD)
+                        log.info("🛡️ Intruder hold elapsed. Resuming perimeter patrol.")
 
-    def lock_target(self, name: str, sid: str, count: int = 0):
-        """Switches FSM into LOCKED state, stops robot movement, and holds for 5s."""
-        if not self.enabled:
-            return
-        with self._state_lock:
-            self._state = self.STATE_LOCKED
-            self._locked_timestamp = time.time()
-            self._publish_stop()
-            self._publish_state_str(self.STATE_LOCKED)
-            log.info("🔒 [FSM -> LOCKED] Target '%s' (%s) verified. Stopping robot for 5s cooldown.", name, sid)
+                elif self._state == self.STATE_AUTHORIZED:
+                    # Halt robot during personalized welcome greeting
+                    self._publish_stop()
+                    if now - self._locked_timestamp >= config.GREETING_HOLD_SECONDS:
+                        self._transition_to(self.STATE_PATROL_FORWARD)
+                        log.info("🛡️ Greeting completed. Resuming perimeter patrol.")
 
-        self._publish_attendance_topics(sid, name, count)
+                elif self._state == self.STATE_PATROL_FORWARD:
+                    # Drive straight along perimeter leg
+                    self._publish_forward()
+                    if elapsed >= config.PATROL_LEG_DURATION:
+                        self._transition_to(self.STATE_PATROL_TURN)
+                        log.info("🔄 Perimeter corner reached. Turning robot.")
+
+                elif self._state == self.STATE_PATROL_TURN:
+                    # Turn at perimeter corner
+                    self._publish_turn()
+                    if elapsed >= config.PATROL_TURN_DURATION:
+                        self._transition_to(self.STATE_PATROL_FORWARD)
+                        log.info("🛡️ Turn complete. Advancing along next perimeter leg.")
+
+            loop_elapsed = time.time() - start_t
+            time.sleep(max(0.01, rate - loop_elapsed))
+
+    def _transition_to(self, new_state: str):
+        self._state = new_state
+        self._state_start_time = time.time()
+        self._publish_state_str(new_state)
         try:
-            self.on_state_changed(self.STATE_LOCKED)
+            self.on_state_changed(new_state)
         except Exception:
             pass
 
+    def lock_intruder(self):
+        """Halts the robot immediately and triggers high-priority intruder state."""
+        if not self.enabled:
+            return
+        with self._state_lock:
+            self._state = self.STATE_INTRUDER_ALERT
+            self._locked_timestamp = time.time()
+            self._publish_stop()
+            self._publish_state_str(self.STATE_INTRUDER_ALERT)
+            log.warning("🚨 [SECURITY FSM] INTRUDER LOCK TRIGGERED! Robot halted.")
+        self.broadcast_unknown()
+        try:
+            self.on_state_changed(self.STATE_INTRUDER_ALERT)
+        except Exception:
+            pass
+
+    def lock_authorized(self, name: str, sid: str = ""):
+        """Halts the robot briefly to welcome verified personnel."""
+        if not self.enabled:
+            return
+        with self._state_lock:
+            self._state = self.STATE_AUTHORIZED
+            self._locked_timestamp = time.time()
+            self._publish_stop()
+            self._publish_state_str(self.STATE_AUTHORIZED)
+            log.info("✅ [SECURITY FSM] Authorized personnel verified: %s. Robot paused.", name)
+        self._publish_verified_topics(sid, name)
+        try:
+            self.on_state_changed(self.STATE_AUTHORIZED)
+        except Exception:
+            pass
+
+    # Aliases
+    lock_target = lock_authorized
+
     def broadcast_unknown(self):
-        """Publishes alert when an unregistered face is seen."""
-        if not self.enabled or not self._pub_unknown:
+        """Publishes security intruder alert message."""
+        if not self.enabled or not self._pub_alert:
             return
         try:
             from std_msgs.msg import String
             msg = String()
-            msg.data = "Unregistered face detected"
-            self._pub_unknown.publish(msg)
+            msg.data = f"INTRUDER_ALERT:{datetime.now().isoformat()}"
+            self._pub_alert.publish(msg)
         except Exception:
             pass
 
-    def _publish_search_spin(self):
+    def _publish_forward(self):
         if self._motor_driver:
-            self._motor_driver.spin_search(speed=0.35)
+            self._motor_driver.forward(speed=config.PATROL_FORWARD_SPEED)
         if self._cmd_vel_pub:
             try:
                 from geometry_msgs.msg import Twist
                 t = Twist()
-                t.angular.z = 0.3
+                t.linear.x = config.PATROL_FORWARD_SPEED
+                self._cmd_vel_pub.publish(t)
+            except Exception:
+                pass
+
+    def _publish_turn(self):
+        if self._motor_driver:
+            self._motor_driver.turn_right(speed=config.PATROL_TURN_SPEED)
+        if self._cmd_vel_pub:
+            try:
+                from geometry_msgs.msg import Twist
+                t = Twist()
+                t.angular.z = config.PATROL_TURN_SPEED
                 self._cmd_vel_pub.publish(t)
             except Exception:
                 pass
@@ -216,16 +278,16 @@ class RobotNavigationFSM:
             except Exception:
                 pass
 
-    def _publish_attendance_topics(self, sid: str, name: str, count: int):
-        if self._pub_student_id:
+    def _publish_verified_topics(self, sid: str, name: str):
+        if self._pub_person_id:
             try:
-                from std_msgs.msg import String, Int32
-                m_sid   = String(); m_sid.data   = sid
-                m_name  = String(); m_name.data  = name
-                m_count = Int32();  m_count.data = count
-                self._pub_student_id.publish(m_sid)
-                self._pub_student_name.publish(m_name)
-                self._pub_total_count.publish(m_count)
+                from std_msgs.msg import String
+                m1 = String()
+                m1.data = str(sid)
+                self._pub_person_id.publish(m1)
+                m2 = String()
+                m2.data = str(name)
+                self._pub_person_name.publish(m2)
             except Exception:
                 pass
 
@@ -234,11 +296,10 @@ class RobotNavigationFSM:
         self._publish_stop()
         if self._motor_driver:
             self._motor_driver.cleanup()
-        if self._ros2_node:
-            try:
-                self._ros2_node.destroy_node()
-            except Exception:
-                pass
+
+
+# Alias for backwards compatibility
+RobotNavigationFSM = SecurityPatrolFSM
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -649,6 +710,9 @@ class AttendanceApp(Tk):
 
     def _on_new_frame(self, frame: np.ndarray):
         self._last_frame = frame
+        # Forward live camera stream to hardware TFT display
+        if self.tft:
+            self.tft.show_live_frame(frame)
         self.after(0, self._draw_frame)
 
     def _draw_frame(self):
@@ -669,40 +733,57 @@ class AttendanceApp(Tk):
         self.cam_canvas._photo = photo
 
     def _on_face_detected(self, name: str, sid: str, frame: np.ndarray, boxes):
-        """Triggered when student is verified in database."""
-        # 1. Audio announcement
+        """Triggered when authorized familiar face is verified in database."""
+        # 1. Welcoming audio announcement calling their name
         self.audio.announce_recognised(name)
 
-        # 2. Update TFT with Green Checkmark
+        # 2. Update TFT with Access Granted HUD
         if self.tft:
             self.tft.show_success(name, sid)
 
-        # 3. Trigger Navigation FSM to halt robot
-        self.nav_fsm.lock_target(name, sid, self.att_mgr.get_count())
+        # 3. Trigger Navigation FSM to halt robot & greet
+        self.nav_fsm.lock_authorized(name, sid)
 
         # 4. GUI feedback
         self.after(0, lambda: self._show_notification(name, sid))
         self.after(0, self._refresh_table)
-        self._log(f"✅ Marked: {name} (ID: {sid})")
+        self._log(f"✅ ACCESS GRANTED: {name} (ID: {sid})")
 
     def _on_unknown_detected(self, frame: np.ndarray, boxes):
-        """Triggered when an unregistered face is observed."""
+        """Triggered when an unfamiliar person is observed in perimeter."""
+        # 1. Sound loud alarm siren & verbal warning alert
         self.audio.announce_unknown()
+
+        # 2. Update TFT with Red Intruder Alert HUD
         if self.tft:
             self.tft.show_unknown()
-        self.nav_fsm.broadcast_unknown()
+
+        # 3. Halt robot and lock onto intruder
+        self.nav_fsm.lock_intruder()
+
+        # 4. Save intruder photo snapshot
+        self.att_mgr.log_intruder(frame)
+
+        # 5. GUI alert banner & table refresh
         self.after(0, self._show_unknown_notification)
-        self._log("⚠️ Unknown person detected (Not in database)")
+        self.after(0, self._refresh_table)
+        self._log("🚨 INTRUDER ALERT! Unfamiliar face detected in perimeter!")
 
     def _on_nav_state_changed(self, state: str):
         """Updates Navigation State Badge in GUI topbar."""
         def _update():
-            if state == RobotNavigationFSM.STATE_LOCKED:
-                self.nav_var.set("NAV: LOCKED 🔒 (Halted)")
-                self.nav_badge.config(bg="#3D201A", fg="#F78166")
-            else:
-                self.nav_var.set("NAV: SEARCHING 🔄")
+            if state == SecurityPatrolFSM.STATE_INTRUDER_ALERT:
+                self.nav_var.set("🚨 INTRUDER ALERT (Halted)")
+                self.nav_badge.config(bg="#4D1515", fg="#FF5555")
+            elif state == SecurityPatrolFSM.STATE_AUTHORIZED:
+                self.nav_var.set("✅ AUTHORIZED: ACCESS GRANTED")
+                self.nav_badge.config(bg="#154D22", fg="#55FF77")
+            elif state == SecurityPatrolFSM.STATE_PATROL_TURN:
+                self.nav_var.set("PATROL: CORNER TURN 🔄")
                 self.nav_badge.config(bg="#1C2D42", fg="#58A6FF")
+            else:
+                self.nav_var.set("PATROL: PERIMETER ROAMING 🛡️")
+                self.nav_badge.config(bg="#1A3326", fg="#3FB950")
         self.after(0, _update)
 
     def _show_notification(self, name: str, sid: str):
@@ -849,6 +930,7 @@ def run_headless(nav_enabled=True, tft_enabled=True, export_interval=10):
     encode_faces(rebuild=False)
 
     att_mgr = AttendanceManager()
+    audio   = AudioAnnouncer(enabled=True)
     tft     = None
     if tft_enabled and config.TFT_ENABLED:
         try:
@@ -857,19 +939,26 @@ def run_headless(nav_enabled=True, tft_enabled=True, export_interval=10):
         except Exception as e:
             log.warning("Could not initialize TFT display: %s", e)
 
-    nav_fsm = RobotNavigationFSM(enabled=nav_enabled)
+    nav_fsm = SecurityPatrolFSM(enabled=nav_enabled)
+
+    def on_frame(frame):
+        if tft:
+            tft.show_live_frame(frame)
 
     def on_face_detected(name, sid, frame, boxes):
         log.info("🎯 TARGET VERIFIED: %s (ID: %s)", name, sid)
+        audio.announce_recognised(name)
         if tft:
             tft.show_success(name, sid)
-        nav_fsm.lock_target(name, sid, att_mgr.get_count())
+        nav_fsm.lock_authorized(name, sid)
 
     def on_unknown_detected(frame, boxes):
-        log.warning("⚠️ UNKNOWN PERSON DETECTED — Not in database!")
+        log.warning("🚨 INTRUDER DETECTED — Not in database!")
+        audio.announce_unknown()
         if tft:
             tft.show_unknown()
-        nav_fsm.broadcast_unknown()
+        nav_fsm.lock_intruder()
+        att_mgr.log_intruder(frame)
 
     def on_status(s):
         log.info("STATUS: %s", s)
@@ -880,6 +969,7 @@ def run_headless(nav_enabled=True, tft_enabled=True, export_interval=10):
         attendance_manager=att_mgr,
         on_face_detected=on_face_detected,
         on_unknown_detected=on_unknown_detected,
+        on_frame=on_frame,
         on_status=on_status,
     )
     engine.start()

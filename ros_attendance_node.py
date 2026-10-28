@@ -130,6 +130,8 @@ class AttendanceNavigationNode(Node):
 
         # ── 3. Core Subsystems ───────────────────────────────────────────────
         self.att_mgr = AttendanceManager()
+        from audio_announcer import AudioAnnouncer
+        self.audio   = AudioAnnouncer(enabled=True)
         self.tft     = None
         if config.TFT_ENABLED:
             try:
@@ -143,6 +145,7 @@ class AttendanceNavigationNode(Node):
             attendance_manager=self.att_mgr,
             on_face_detected=self.on_face_detected,
             on_unknown_detected=self.on_unknown_detected,
+            on_frame=self.on_frame,
             on_status=self.on_status,
         )
         self.engine.start()
@@ -180,26 +183,31 @@ class AttendanceNavigationNode(Node):
 
     # ── State Machine Transitions ────────────────────────────────────────────
 
+    def on_frame(self, frame):
+        """Streams live video frame to TFT display."""
+        if self.tft:
+            self.tft.show_live_frame(frame)
+
     def on_face_detected(self, name: str, sid: str, frame, boxes):
         """
-        Triggered by RecognitionEngine when a student in database is confirmed.
-        Switches FSM into 'LOCKED' state, halts robot, and logs attendance.
+        Triggered when a familiar authorized person is confirmed.
+        Welcomes them by calling their name, pauses robot, and logs access.
         """
         with self._state_lock:
             self._state = self.STATE_LOCKED
             self._locked_timestamp = time.time()
-
-            # Immediate stop command
             self._publish_stop()
+            self.get_logger().info(f"✅ State -> AUTHORIZED: Welcoming '{name}' ({sid}). Stopping robot.")
+            self._publish_state_str("AUTHORIZED")
 
-            self.get_logger().info(f"🔒 State -> LOCKED: Face recognized for '{name}' ({sid}). Stopping robot.")
-            self._publish_state_str(self.STATE_LOCKED)
+        # Voice welcome calling name
+        self.audio.announce_recognised(name)
 
         # Update TFT display
         if self.tft:
             self.tft.show_success(name, sid)
 
-        # Broadcast attendance ROS 2 topics
+        # Broadcast ROS 2 topics
         msg_sid = String()
         msg_sid.data = sid
         self.pub_student_id.publish(msg_sid)
@@ -213,13 +221,19 @@ class AttendanceNavigationNode(Node):
         self.pub_total_count.publish(msg_count)
 
     def on_unknown_detected(self, frame, boxes):
-        """Triggered when an unregistered face is observed."""
-        self.get_logger().warn("⚠️ Unknown face detected in field of view!")
+        """Triggered when an unfamiliar person is observed in perimeter."""
+        self.get_logger().warn("🚨 INTRUDER ALERT! Unfamiliar person detected!")
+        # Sound alarm siren & verbal warning alert
+        self.audio.announce_unknown()
+
         if self.tft:
             self.tft.show_unknown()
 
+        # Capture intruder photo snapshot
+        self.att_mgr.log_intruder(frame)
+
         msg = String()
-        msg.data = "Unregistered face detected"
+        msg.data = "INTRUDER_ALERT"
         self.pub_unknown.publish(msg)
 
     def on_status(self, msg: str):

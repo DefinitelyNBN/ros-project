@@ -1,62 +1,59 @@
-# 🤖 ROS Attendance Bot (Raspberry Pi 4B Optimized)
+# 🛡️ ROS Security Patrol Bot (Raspberry Pi 4B Autonomous Defense)
 
-> Autonomous face recognition attendance system designed for Raspberry Pi robots with an external USB camera.
+> Autonomous perimeter security and surveillance robot for Raspberry Pi with live face analysis, speaker alarms, and live TFT camera streaming.
 
-📖 **Complete Hardware & Pinout Handbooks**:
-- [HARDWARE_AND_OPERATIONS_GUIDE.md](file:///Users/nbn/Desktop/rosprojectattendance/HARDWARE_AND_OPERATIONS_GUIDE.md) — Step-by-step robot assembly, software setup, and systemd boot service.
-- [CIRCUIT_AND_PINOUT_GUIDE.md](file:///Users/nbn/Desktop/rosprojectattendance/CIRCUIT_AND_PINOUT_GUIDE.md) — Master circuit schematic, 40-pin GPIO pinout, power distribution, and L298N motor driver wiring.
-
----
-
-## ⚡ Raspberry Pi 4B Optimizations
-
-Running neural face embeddings and live video simultaneously on a moving Raspberry Pi 4B robot introduces hardware constraints:
-1. **Decoupled Zero-Latency Pipeline**: Camera capture runs in a dedicated thread (`CamGrabber`), so OpenCV's frame buffer never lags behind real-time. Robot telemetry stays butter-smooth at 30 FPS even when the robot navigates or turns quickly.
-2. **V4L2 + MJPG Hardware Decoding**: Automatically selects Linux `V4L2` driver and requests compressed `MJPG` from the USB webcam to avoid saturating the USB 2.0/3.0 bus (which otherwise limits raw YUYV video to 5-10 FPS).
-3. **0.33x Sub-sampling (`PROCESS_SCALE = 0.33`)**: Downsamples frame to ~213x160 for the HOG detector, delivering a **~5x speedup** on the Cortex-A72 CPU while maintaining high recognition accuracy.
-4. **Zero-Upsample (`UPSAMPLE_TIMES = 0`)**: Prevents dlib's costly multi-scale pyramid from ballooning CPU load and causing thermal throttling.
-5. **Auto-Capped Training**: Resizes dataset photos during encoding to max 640px so student registration completes in seconds instead of minutes.
+📖 **Hardware & Pinout Handbooks**:
+- [HARDWARE_AND_OPERATIONS_GUIDE.md](file:///Users/nbn/Desktop/rosprojectattendance/HARDWARE_AND_OPERATIONS_GUIDE.md) — Robot assembly, motor drivers, and systemd boot service.
+- [CIRCUIT_AND_PINOUT_GUIDE.md](file:///Users/nbn/Desktop/rosprojectattendance/CIRCUIT_AND_PINOUT_GUIDE.md) — Master circuit schematic, 40-pin GPIO pinout, power distribution, and BTS7960/L298N wiring.
 
 ---
 
-## Architecture
+## ⚡ Core Security Capabilities
 
-```
-rosprojectattendance/
-├── main.py                  ← Unified master runner (GUI, ROS 2 FSM, TFT, Excel)
-├── headless.py              ← Autonomous CLI runner for Pi without screen
-├── ros_attendance_node.py   ← ROS 2 Humble node broadcasting to /cmd_vel & /attendance/*
-├── recognition_engine.py    ← Multi-threaded zero-latency camera & HOG engine
-├── tft_display.py           ← TFT display feedback driver (Checkmark / Red X)
-├── attendance.py            ← Attendance logic + Excel (.xlsx) / CSV export
-├── encoder.py               ← 128-d face embedding generator from dataset/
-├── config.py                ← Central parameters & Pi 4B tuning profile
-├── pi_setup.sh              ← One-click Pi 4B environment & swap setup script
-├── setup_check.py           ← System dependency validator
-├── CIRCUIT_AND_PINOUT_GUIDE.md      ← Master circuit schematic & 40-pin pinout
-├── HARDWARE_AND_OPERATIONS_GUIDE.md ← Full robot assembly & operations manual
-├── requirements.txt
-│
-├── dataset/                 ← Student training images (FirstName_LastName_ID/)
-├── encodings/               ← Saved embeddings (face_encodings.pkl)
-├── attendance_records/      ← Excel (.xlsx) reports + CSV logs
-└── logs/                    ← System execution logs
-```
+1. **Perimeter Roaming**:
+   - Autonomously traverses perimeter boundaries (`PATROL_FORWARD`), executing perimeter corner turns (`PATROL_TURN`).
+2. **Real-Time Face Analysis**:
+   - Uses optimized 0-latency HOG neural embeddings pipeline on Raspberry Pi 4B Cortex-A72 CPU.
+3. **🚨 Intruder Detection & Alarm**:
+   - When an **unfamiliar person** enters the perimeter:
+     - Halts robot immediately and locks onto target.
+     - Sounds high-urgency **alarm sirens & verbal warnings** over speakers: *"Warning! Intruder alert! Unfamiliar person detected in secure perimeter!"*
+     - **Streams live camera feed** with glowing Red Intruder Alert HUD to the TFT display.
+     - Saves timestamped snapshot photo to `security_records/intruders/`.
+4. **✅ Familiar Personnel Welcome**:
+   - When a **trained / authorized person** is recognized:
+     - Greets them warmly by name: *"Welcome, {name}! Identity verified. Access granted."*
+     - Displays Green Access Granted HUD on live TFT stream.
+     - Pauses briefly, then resumes autonomous perimeter patrol.
+5. **📺 Live Camera Feed on TFT Screen**:
+   - Real-time video stream rendered directly on the robot's TFT display (`/dev/fb1` or preview window) with futuristic HUD overlays.
 
 ---
 
-## 🚀 Quick Setup on Raspberry Pi 4B
+## 🚀 Quick Launch Commands
 
-### Step 1: Automated Pi Setup (One-Click)
-Run the automated optimizer script on your Pi 4B:
+### 1. Run Autonomous Security Patrol Bot:
 ```bash
-chmod +x pi_setup.sh
-./pi_setup.sh
+python3 security_bot.py
+# Or pure headless mode over SSH:
+python3 security_bot.py --headless
 ```
-*What this script does:*
-- Increases Pi swap space to 2048MB (required so `dlib` doesn't OOM during compile).
-- Installs BLAS / LAPACK accelerators (`libopenblas-dev`, `libatlas-base-dev`).
-- Installs V4L2 camera tools and builds Python dependencies.
+
+### 2. Stationary Guard Mode (Camera & Alarms Active, No Wheel Movement):
+```bash
+python3 security_bot.py --no-nav
+```
+
+### 3. Test Speakers & Security Alarms:
+```bash
+python3 test_speaker.py
+```
+
+### 4. Live Camera Telemetry in Web Browser:
+```bash
+python3 camera_diagnostic.py
+# Open http://<pi-ip>:5000 in your browser
+```
 
 ---
 

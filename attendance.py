@@ -44,8 +44,8 @@ class AttendanceManager:
 
     def mark(self, student_id: str, name: str) -> bool:
         """
-        Mark a student as present.
-        Returns True if this was a NEW mark (not a cooldown duplicate).
+        Mark a familiar person as Authorized.
+        Returns True if this was a NEW event (not a cooldown duplicate).
         """
         now = datetime.now()
 
@@ -60,16 +60,54 @@ class AttendanceManager:
             "name":      name,
             "date":      self._session_date,
             "time":      now.strftime("%H:%M:%S"),
-            "status":    "Present",
+            "status":    "AUTHORIZED",
             "last_seen": now,
         }
 
-        log.info("✅ Marked present: %s (%s) at %s", name, student_id, now.strftime("%H:%M:%S"))
+        log.info("✅ Authorized entry logged: %s (%s) at %s", name, student_id, now.strftime("%H:%M:%S"))
+        self._save_csv()
+        return True
+
+    def log_intruder(self, frame=None) -> bool:
+        """
+        Logs an unfamiliar person detection / security incident.
+        Saves a timestamped photo to security_records/intruders/ if frame provided.
+        """
+        now = datetime.now()
+        intruder_id = f"INTRUDER_{now.strftime('%H%M%S')}"
+
+        # Throttle repeated intruder logs to once every 10 seconds
+        if hasattr(self, "_last_intruder_time"):
+            if (now - self._last_intruder_time).total_seconds() < 10.0:
+                return False
+        self._last_intruder_time = now
+
+        snapshot_name = ""
+        if frame is not None:
+            try:
+                import cv2
+                Path(config.INTRUDER_SNAPSHOTS_DIR).mkdir(parents=True, exist_ok=True)
+                snapshot_name = f"intruder_{now.strftime('%Y%m%d_%H%M%S')}.jpg"
+                snapshot_path = os.path.join(config.INTRUDER_SNAPSHOTS_DIR, snapshot_name)
+                cv2.imwrite(snapshot_path, frame)
+                log.info("📸 Intruder snapshot captured → %s", snapshot_path)
+            except Exception as e:
+                log.warning("Could not save intruder snapshot: %s", e)
+
+        self._records[intruder_id] = {
+            "id":        "UNREGISTERED",
+            "name":      "UNKNOWN INTRUDER",
+            "date":      self._session_date,
+            "time":      now.strftime("%H:%M:%S"),
+            "status":    "🚨 INTRUDER ALERT",
+            "snapshot":  snapshot_name,
+            "last_seen": now,
+        }
         self._save_csv()
         return True
 
     def get_records(self) -> list[dict]:
-        """Return sorted list of attendance records (latest first)."""
+        """Return sorted list of security records (latest first)."""
         return sorted(
             self._records.values(),
             key=lambda r: r["time"],

@@ -19,13 +19,14 @@ import time
 log = logging.getLogger(__name__)
 
 # ── Announcement Templates ────────────────────────────────────────────────────
-MSG_RECOGNISED   = "Welcome, {name}. Attendance marked."
-MSG_UNKNOWN      = "Unknown person detected. Access not granted."
-MSG_STARTUP      = "Attendance system online. Ready to scan."
-MSG_SHUTDOWN     = "Attendance system shutting down."
+MSG_RECOGNISED   = "Welcome, {name}! Identity verified. Access granted."
+MSG_UNKNOWN      = "Warning! Intruder alert! Unfamiliar person detected in secure perimeter! Please step back immediately!"
+MSG_STARTUP      = "Security patrol bot online. Perimeter surveillance active."
+MSG_SHUTDOWN     = "Security patrol bot shutting down. Perimeter defense offline."
+MSG_PATROL       = "Perimeter check complete. Resuming security patrol."
 
 # ── espeak settings ───────────────────────────────────────────────────────────
-ESPEAK_SPEED     = 155      # words per minute (120–180 recommended)
+ESPEAK_SPEED     = 150      # words per minute (120–180 recommended)
 ESPEAK_AMPLITUDE = 200      # volume 0–200 (200 = maximum)
 ESPEAK_PITCH     = 55       # pitch 0–99
 ESPEAK_VOICE     = "en"     # "en" | "en-us" | "en-gb" | "en+m3" for male voice
@@ -33,14 +34,13 @@ ESPEAK_VOICE     = "en"     # "en" | "en-us" | "en-gb" | "en+m3" for male voice
 
 class AudioAnnouncer:
     """
-    Non-blocking audio announcer. Queues speech requests and plays them
-    sequentially in a daemon thread, so recognition is never slowed down.
-    USB speakers on Raspberry Pi are auto-detected by ALSA — no config needed.
+    Non-blocking security audio announcer. Queues speech & siren requests
+    and plays them sequentially in a daemon thread.
     """
 
     def __init__(self, enabled: bool = True):
         self._enabled = enabled
-        self._queue   = queue.Queue(maxsize=4)   # cap: drop if robot is very busy
+        self._queue   = queue.Queue(maxsize=5)
         self._thread  = None
         self._running = False
 
@@ -51,22 +51,30 @@ class AudioAnnouncer:
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def announce_recognised(self, name: str):
-        """Call when a registered face is confirmed."""
-        msg = MSG_RECOGNISED.format(name=name)
+        """Call when a registered/familiar face is confirmed — welcomes by name."""
+        clean_name = name.split()[0] if name else "Authorized Person"
+        msg = MSG_RECOGNISED.format(name=clean_name)
+        log.info("[AUDIO] Welcoming authorized personnel: %s", clean_name)
         self._enqueue(msg)
 
     def announce_unknown(self):
-        """Call when an unregistered face is detected."""
+        """Call when an unfamiliar / unregistered face is detected — raises security alert."""
+        log.warning("[AUDIO] Sounding INTRUDER ALERT via speakers!")
+        # First queue alarm sound cue, then warning speech
+        self._enqueue("ALARM_SIREN")
         self._enqueue(MSG_UNKNOWN)
 
+    def announce_patrol(self):
+        """Call when resuming perimeter patrol."""
+        self._enqueue(MSG_PATROL)
+
     def announce_startup(self):
-        """Call once at system boot."""
+        """Call once at security system boot."""
         self._enqueue(MSG_STARTUP)
 
     def announce_shutdown(self):
         """Call on clean exit — drains queue first."""
         self._enqueue(MSG_SHUTDOWN)
-        # Give the worker a moment to speak the message before process exits
         time.sleep(3.5)
 
     def speak(self, text: str):
@@ -116,6 +124,18 @@ class AudioAnnouncer:
 
     def _speak_blocking(self, text: str):
         """Invoke espeak synchronously (called from worker thread only)."""
+        if text == "ALARM_SIREN":
+            # Fast alternating alert siren tone
+            for pitch in [90, 40, 95, 35]:
+                try:
+                    subprocess.run(
+                        ["espeak", "-p", str(pitch), "-s", "280", "-a", str(ESPEAK_AMPLITUDE), "woo woo alert"],
+                        capture_output=True, timeout=1.5
+                    )
+                except Exception:
+                    pass
+            return
+
         cmd = [
             "espeak",
             "-v", ESPEAK_VOICE,

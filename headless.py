@@ -75,17 +75,22 @@ def main():
         except Exception as e:
             log.warning("Could not initialize TFT display: %s", e)
 
+    def on_frame(frame):
+        if tft:
+            tft.show_live_frame(frame)
+
     def on_face_detected(name, sid, frame, boxes):
-        log.info("✅ MARKED: %s (ID: %s)", name, sid)
+        log.info("🎯 VERIFIED AUTHORIZED: %s (ID: %s)", name, sid)
         audio.announce_recognised(name)
         if tft:
             tft.show_success(name, sid)
 
     def on_unknown_detected(frame, boxes):
-        log.warning("❌ UNKNOWN PERSON DETECTED — Not in database!")
+        log.warning("🚨 INTRUDER ALERT — Unfamiliar person in perimeter!")
         audio.announce_unknown()
         if tft:
             tft.show_unknown()
+        att.log_intruder(frame)
 
     def on_status(s):
         log.info("STATUS: %s", s)
@@ -96,6 +101,7 @@ def main():
         attendance_manager=att,
         on_face_detected=on_face_detected,
         on_unknown_detected=on_unknown_detected,
+        on_frame=on_frame,
         on_status=on_status,
     )
     engine.start()

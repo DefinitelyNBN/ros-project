@@ -151,6 +151,18 @@ class MotorDriver:
         right = linear_x + angular_z * 0.5
         self.set_motors(left, right)
 
+    def forward(self, speed: float = 0.35):
+        """Drives straight along perimeter."""
+        self.set_motors(speed, speed)
+
+    def turn_left(self, speed: float = 0.30):
+        """Turns left at perimeter corner."""
+        self.set_motors(-speed, speed)
+
+    def turn_right(self, speed: float = 0.30):
+        """Turns right at perimeter corner."""
+        self.set_motors(speed, -speed)
+
     def spin_search(self, speed=0.30):
         """Rotates the robot clockwise in place to scan for faces."""
         # Left forward, Right reverse

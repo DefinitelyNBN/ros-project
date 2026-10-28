@@ -34,13 +34,15 @@ ENV/
 .DS_Store
 ._*
 
-# Attendance records and logs generated during runtime
+# Attendance and Security records and logs generated during runtime
 attendance_records/attendance_*.csv
 attendance_records/attendance_*.xlsx
-logs/attendance_*.log
+security_records/
+logs/*.log
 encodings/face_encodings.pkl
 
 # Keep directory structures
 !attendance_records/.gitkeep
+!security_records/.gitkeep
 !logs/.gitkeep
 !encodings/.gitkeep

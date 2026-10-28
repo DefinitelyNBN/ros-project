@@ -135,11 +135,11 @@ void handleSerialCommand(String cmd) {
     showSuccessCheckmark(personName, studentId);
     Serial.println(F("ACK:SUCCESS_DISPLAYED"));
 
-  } else if (cmd == "UNKNOWN" || cmd.startsWith("UNKNOWN:")) {
+  } else if (cmd == "UNKNOWN" || cmd.startsWith("UNKNOWN:") || cmd == "INTRUDER" || cmd.startsWith("INTRUDER:")) {
     currentState = STATE_CROSS;
     stateTimestamp = millis();
     showUnknownCross();
-    Serial.println(F("ACK:UNKNOWN_DISPLAYED"));
+    Serial.println(F("ACK:INTRUDER_DISPLAYED"));
 
   } else if (cmd.startsWith("IDLE")) {
     int colon = cmd.indexOf(':');

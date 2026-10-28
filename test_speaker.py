@@ -98,22 +98,26 @@ def test_espeak_direct():
         fail(f"Unexpected error: {e}")
 
 
-# ── Step 4: Test via AudioAnnouncer class (used by the real system) ───────────
+# ── Step 4: Test via AudioAnnouncer class (Security Bot Audio) ───────────────
 def test_audio_announcer_class():
-    print(f"\n{BOLD}[4/4] Testing AudioAnnouncer class (your real system)...{RESET}")
+    print(f"\n{BOLD}[4/4] Testing AudioAnnouncer Security Announcements...{RESET}")
     try:
         from audio_announcer import AudioAnnouncer
         announcer = AudioAnnouncer(enabled=True)
-        time.sleep(0.5)  # let worker thread spin up
+        time.sleep(0.5)
 
-        announcer.speak("Hello Niyanth! Audio Announcer class is working perfectly.")
-        info("Message queued — waiting for it to finish speaking...")
-        time.sleep(6)    # wait for speech to complete
+        info("Testing FAMILIAR WELCOME announcement...")
+        announcer.announce_recognised("Niyanth")
+        time.sleep(5)
+
+        info("Testing INTRUDER ALERT SIREN & WARNING...")
+        announcer.announce_unknown()
+        time.sleep(8)
 
         announcer.shutdown()
-        ok("AudioAnnouncer class test passed!")
+        ok("AudioAnnouncer security speech & siren tests passed!")
     except ImportError:
-        fail("Could not import AudioAnnouncer — make sure you're running from the project root.")
+        fail("Could not import AudioAnnouncer — make sure you're running from project root.")
     except Exception as e:
         fail(f"AudioAnnouncer error: {e}")
 
